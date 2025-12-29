@@ -30,6 +30,7 @@ Install the required Python packages:
 
 ```bash
 pip3 install paramiko psycopg2-binary
+```
 
 ## 🛠️ Usage
 

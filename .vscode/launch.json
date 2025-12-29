@@ -1,0 +1,23 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+
+        {
+            "name": "Run Mattermost Purge",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/app.py",
+            "console": "integratedTerminal",
+            "args": [
+                "--ssh", "root@127.0.0.1",
+                "--ssh-password", "YOURSERVERPASSWORD",
+                "--pg-dsn", "host=127.0.0.1 dbname=mattermost user=mmuser password=YOURDBPASSWORD",
+                "--remote-data-dir", "/mnt/user/mattermost/data",
+                "--mm-server", "http://127.0.0.1:8065",
+                "--purge-deactivated-users",
+                "--purge-db-orphans",
+                "--vacuum"
+            ]
+        }
+    ]
+}

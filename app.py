@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """
-Mattermost Purge Tool - Total Clean Edition
+Mattermost Purge Tool - Clean Summary Edition
 
 Features:
-1. Purge Archived Channels.
-2. Purge DMs of Deactivated Users.
-3. Purge DB Orphans (Files with no parent Post).
-4. Safety: Uses Database-driven logic only.
+1. Purge Archived Channels & Deactivated User DMs.
+2. Purge DB Orphans (Files with no parent Post).
+3. Maintenance: VACUUM FULL to reclaim physical DB disk space.
+4. Output: Clean summary tables only (No filenames).
 """
 
 import argparse
@@ -283,51 +283,37 @@ def get_deactivated_users_dms(cur, schema: str, channels_table: str, users_table
     return list(unique_dms.values())
 
 
-# --- NEW: DB Orphan Logic ---
 def get_db_orphans(cur, schema: str, fi_table: str, posts_table: str) -> List[Dict]:
-    """Finds files in FileInfo where PostId points to a non-existent Post."""
     logger.info("Scanning for DB Orphans (Left Join PostId is NULL)...")
-
     fi_t = qname(schema, fi_table)
     p_t = qname(schema, posts_table)
-
     c_fi_id = get_real_col(cur, schema, fi_table, ["Id", "id"])
     c_fi_postid = get_real_col(cur, schema, fi_table, ["PostId", "postid"])
     c_fi_path = get_real_col(cur, schema, fi_table, ["Path", "path"])
     c_fi_thumb = get_real_col(cur, schema, fi_table, ["ThumbnailPath", "thumbnailpath"])
     c_fi_preview = get_real_col(cur, schema, fi_table, ["PreviewPath", "previewpath"])
-
     c_p_id = get_real_col(cur, schema, posts_table, ["Id", "id"])
 
-    # The Logic from your Screenshot:
     sql = f"""
         SELECT fi."{c_fi_id}", fi."{c_fi_path}", fi."{c_fi_thumb}", fi."{c_fi_preview}"
         FROM {fi_t} fi
         LEFT JOIN {p_t} p ON p."{c_p_id}" = fi."{c_fi_postid}"
         WHERE p."{c_p_id}" IS NULL
     """
-
     cur.execute(sql)
     rows = cur.fetchall()
-
     orphans = []
     for r in rows:
         paths = []
         if r[1]: paths.append(r[1])
         if r[2]: paths.append(r[2])
         if r[3]: paths.append(r[3])
-
         if paths:
-            orphans.append({
-                "fi_id": r[0],
-                "paths": paths
-            })
-
+            orphans.append({"fi_id": r[0], "paths": paths})
     return orphans
 
 
 def delete_db_orphan_row(cur, schema: str, fi_table: str, fi_id: str, execute: bool):
-    """Deletes the FileInfo row to clean the DB."""
     if not execute: return
     fi_t = qname(schema, fi_table)
     c_id = get_real_col(cur, schema, fi_table, ["Id", "id"])
@@ -338,10 +324,24 @@ def delete_db_orphan_row(cur, schema: str, fi_table: str, fi_id: str, execute: b
         logger.error(f"Failed to delete FileInfo row {fi_id}: {e}")
 
 
-def delete_remote_files(sftp, remote_base: str, rel_paths: List[str], execute: bool) -> Tuple[
-    int, int, int, List[Tuple[str, int]]]:
+def run_db_vacuum(conn, schema, table, execute: bool):
+    """Runs VACUUM FULL to reclaim DB disk space."""
+    if not execute:
+        print(f"\n[Maintenance] Dry-Run: Skipping VACUUM FULL on {table}.")
+        return
+
+    cur = conn.cursor()
+    target = qname(schema, table)
+    print(f"\n[Maintenance] Running VACUUM FULL on {target}... (This may lock the DB for a while)")
+    try:
+        cur.execute(f"VACUUM FULL VERBOSE ANALYZE {target}")
+        print("  -> Vacuum Complete.")
+    except Exception as e:
+        logger.error(f"Vacuum failed: {e}")
+
+
+def delete_remote_files(sftp, remote_base: str, rel_paths: List[str], execute: bool) -> Tuple[int, int, int]:
     deleted, missing, total_bytes = 0, 0, 0
-    large_files = []
 
     def remote_join(base, rel):
         return base.rstrip('/') + '/' + rel.lstrip('/')
@@ -352,7 +352,6 @@ def delete_remote_files(sftp, remote_base: str, rel_paths: List[str], execute: b
             stat = sftp.stat(full_path)
             fsize = stat.st_size
             total_bytes += fsize
-            if fsize > LARGE_FILE_BYTES: large_files.append((os.path.basename(full_path), fsize))
         except (FileNotFoundError, IOError):
             missing += 1
             continue
@@ -361,13 +360,12 @@ def delete_remote_files(sftp, remote_base: str, rel_paths: List[str], execute: b
                 sftp.remove(full_path); deleted += 1
             except Exception:
                 pass
-    return deleted, missing, total_bytes, large_files
+    return deleted, missing, total_bytes
 
 
 def print_summary_table(data: List[Dict], mode: str, total_reclaimed: int, total_storage_size: int):
     print("\n" + "=" * 80)
     print(f" MATTERMOST PURGE REPORT ({mode})")
-    print(f" Showing files larger than {LARGE_FILE_THRESHOLD_MB} MB only.")
     print("=" * 80)
     print(f"{'CHANNEL / USER DM / ORPHAN':<50} | {'FILES':<8} | {'SIZE':<10}")
     print("-" * 80)
@@ -380,12 +378,7 @@ def print_summary_table(data: List[Dict], mode: str, total_reclaimed: int, total
             display = f"{entry['team']}:{entry['channel']}"
         if len(display) > 48: display = display[:45] + "..."
         print(f"{display:<50} | {str(entry['file_count']):<8} | {entry['readable_reclaimed']:<10}")
-        large_files = entry.get('large_files', [])
-        if large_files:
-            print(f"   [!] Large Files (> {LARGE_FILE_THRESHOLD_MB} MB):")
-            for fname, fsize in large_files:
-                print(f"       - {fname} ({format_bytes(fsize)})")
-            print("")
+
     print("-" * 80)
     print(f"{'RECLAIMED SPACE':<50} | {'':<8} | {format_bytes(total_reclaimed):<10}")
     print("-" * 80)
@@ -406,8 +399,10 @@ def main():
 
     # Modes
     ap.add_argument("--purge-deactivated-users", action="store_true")
-    ap.add_argument("--purge-db-orphans", action="store_true", help="Delete files where Post no longer exists")
+    ap.add_argument("--purge-db-orphans", action="store_true")
 
+    # Actions
+    ap.add_argument("--vacuum", action="store_true", help="Run VACUUM FULL on FileInfo table (requires --execute)")
     ap.add_argument("--execute", action="store_true")
     ap.add_argument("--limit", type=int, default=0)
     args = ap.parse_args()
@@ -423,7 +418,6 @@ def main():
         if args.execute: sys.exit(1)
 
     conn = connect_db(args.pg_dsn)
-    # Enable AutoCommit for DELETE operations to work smoothly
     conn.autocommit = True
     cur = conn.cursor()
     schema, fi_table, posts_table, channels_table = detect_mm_tables(cur)
@@ -449,14 +443,13 @@ def main():
                 pass
 
             bytes_cleaned = 0
-            l_files = []
             if paths:
-                deleted, missing, bytes_cleaned, l_files = delete_remote_files(sftp, args.remote_data_dir, paths,
-                                                                               execute=args.execute)
+                deleted, missing, bytes_cleaned = delete_remote_files(sftp, args.remote_data_dir, paths,
+                                                                      execute=args.execute)
                 grand_total_bytes += bytes_cleaned
 
             report_data.append({"team": team, "channel": ch_name, "type": "Channel", "file_count": len(paths),
-                                "readable_reclaimed": format_bytes(bytes_cleaned), "large_files": l_files})
+                                "readable_reclaimed": format_bytes(bytes_cleaned)})
             mmctl_delete_channel_by_id(cfg, ch_id, execute=args.execute)
             processed_count += 1
             if args.limit and processed_count >= args.limit: break
@@ -476,15 +469,13 @@ def main():
                 except Exception:
                     pass
                 bytes_cleaned = 0
-                l_files = []
                 if paths:
-                    deleted, missing, bytes_cleaned, l_files = delete_remote_files(sftp, args.remote_data_dir, paths,
-                                                                                   execute=args.execute)
+                    deleted, missing, bytes_cleaned = delete_remote_files(sftp, args.remote_data_dir, paths,
+                                                                          execute=args.execute)
                     grand_total_bytes += bytes_cleaned
                 report_data.append(
                     {"team": "Direct Message", "channel": dm['id'], "username": dm['username'], "type": "DM",
-                     "file_count": len(paths), "readable_reclaimed": format_bytes(bytes_cleaned),
-                     "large_files": l_files})
+                     "file_count": len(paths), "readable_reclaimed": format_bytes(bytes_cleaned)})
                 mmctl_delete_channel_by_id(cfg, dm['id'], execute=args.execute)
                 processed_count += 1
                 if args.limit and processed_count >= args.limit: break
@@ -496,34 +487,27 @@ def main():
         print("\nScanning DB Orphans (Files with no parent Post)...")
         orphans = get_db_orphans(cur, schema, fi_table, posts_table)
         print(f"  -> Found {len(orphans)} orphans.")
-
         for orphan in orphans:
             print("o", end="", flush=True)
             bytes_cleaned = 0
-            l_files = []
             if orphan['paths']:
-                deleted, missing, bytes_cleaned, l_files = delete_remote_files(sftp, args.remote_data_dir,
-                                                                               orphan['paths'], execute=args.execute)
+                deleted, missing, bytes_cleaned = delete_remote_files(sftp, args.remote_data_dir, orphan['paths'],
+                                                                      execute=args.execute)
                 grand_total_bytes += bytes_cleaned
-
-            report_data.append({
-                "team": "Orphan Cleanup",
-                "channel": orphan['fi_id'],  # Use ID as placeholder
-                "type": "Orphan",
-                "file_count": len(orphan['paths']),
-                "readable_reclaimed": format_bytes(bytes_cleaned),
-                "large_files": l_files
-            })
-
-            # ALSO DELETE THE DB ROW
+            report_data.append({"team": "Orphan Cleanup", "channel": orphan['fi_id'], "type": "Orphan",
+                                "file_count": len(orphan['paths']), "readable_reclaimed": format_bytes(bytes_cleaned)})
             delete_db_orphan_row(cur, schema, fi_table, orphan['fi_id'], execute=args.execute)
-
             processed_count += 1
             if args.limit and processed_count >= args.limit: break
 
     print("\nCalculating total storage usage...")
     total_usage = get_remote_folder_size(cfg, args.remote_data_dir)
     print("Scan Complete.")
+
+    # --- 4. VACUUM (Optional) ---
+    if args.vacuum:
+        run_db_vacuum(conn, schema, fi_table, execute=args.execute)
+
     cur.close();
     conn.close()
     if cfg._sftp_client: cfg._sftp_client.close()

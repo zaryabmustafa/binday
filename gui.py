@@ -410,7 +410,7 @@ class PurgeApp:
             ft.Row([section_title(ft.Icons.TERMINAL_ROUNDED, "mmctl login"),
                     ft.Container(T("Optional. Only needed if mmctl inside the container isn't logged in already.", 13, color=INK2,
                                    max_lines=1, overflow=ft.TextOverflow.ELLIPSIS), expand=True),
-                    self._test_button("mmctl")], spacing=12),
+                    *self._section_badge("mmctl"), self._test_button("mmctl")], spacing=12),
             ft.Row([self.f_mm_server, self.f_mm_token], spacing=12)]), padding=20)
 
         check_rows = []
@@ -452,7 +452,7 @@ class PurgeApp:
 
     # ---- per-section Test buttons
     def _section_head(self, icon, title, key) -> ft.Control:
-        return ft.Row([section_title(icon, title), ft.Container(expand=True), self._test_button(key)],
+        return ft.Row([section_title(icon, title), ft.Container(expand=True), *self._section_badge(key), self._test_button(key)],
                       vertical_alignment=ft.CrossAxisAlignment.CENTER)
 
     def _test_button(self, key) -> ft.Control:
@@ -460,6 +460,31 @@ class PurgeApp:
             return ft.Row([spinner(16, PRIMARY), T("Testing…", 13, ft.FontWeight.W_600, INK2)], spacing=8, tight=True)
         return btn("Test", ft.Icons.PLAY_CIRCLE_OUTLINE_ROUNDED, lambda e, k=key: self._on_test(k), "outline", small=True,
                    disabled=self.connecting)
+
+    CONNECT_ROWS = {"server": ("SSH connected", "Data directory found"), "database": ("Database reachable",),
+                    "mmctl": ("mmctl works", "mmctl failed")}
+
+    def _section_rows(self, key) -> list:
+        """This section's latest result: its own test, else its rows from Connect, else (mmctl) the Server test's mmctl row."""
+        if key in self.testing:
+            return []
+        if self.tests.get(key):
+            return self.tests[key]
+        rows = [c for c in self.checks if c[1] in self.CONNECT_ROWS[key]] if not self.connecting else []
+        if not rows and key == "mmctl":
+            rows = [r for r in self.tests.get("server", []) if r[1].startswith("mmctl")]
+        return rows
+
+    def _section_badge(self, key) -> list:
+        """A small Passed / Failed / Check mark beside a section's Test button (same row, so panel heights don't move)."""
+        rows = self._section_rows(key)
+        if not rows:
+            return []
+        ok, _, _, hover = self._summary(self.TEST_NAMES[key], rows)
+        icon, color, word = {True: (ft.Icons.CHECK_CIRCLE_ROUNDED, OK, "Passed"), False: (ft.Icons.CANCEL_OUTLINED, INK, "Failed"),
+                             None: (ft.Icons.WARNING_AMBER_ROUNDED, INK, "Check")}[ok]
+        return [ft.Container(ft.Row([ft.Icon(icon, color=color, size=18), T(word, 13, ft.FontWeight.W_600, INK)], spacing=6, tight=True),
+                             tooltip=hover)]
 
     TEST_NAMES = {"server": "Server", "database": "Database", "mmctl": "mmctl login"}
 

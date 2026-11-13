@@ -245,8 +245,14 @@ def test_server(s: Settings) -> List[tuple]:
             rows.append((True, "Docker container running", s.container))
             version = sess.mmctl("version", allow_fail=True)
             vline = next((l.strip() for l in version.splitlines() if "Version" in l), version.splitlines()[0] if version else "")
-            rows.append((True, "mmctl found", vline[:80]) if version else
-                        (False, "mmctl not found", f"No mmctl inside “{s.container}”"))
+            if not version:
+                rows.append((False, "mmctl not found", f"No mmctl inside “{s.container}”"))
+            else:
+                try:  # installed isn't enough: it must be able to talk to Mattermost (local mode or a saved login)
+                    rows.append((True, "mmctl works", f"{len(mmctl_team_names(sess))} teams · {' '.join(vline.split())[:60]}"))
+                except Exception:
+                    rows.append((None, "mmctl installed but not logged in",
+                                 "Fill in mmctl login and test it, or turn on local mode in the container"))
     except Exception as e:
         rows.append((False, "Server check failed", _short(e)))
     finally:

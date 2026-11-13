@@ -101,7 +101,7 @@ def install(fast: bool = False):
 
     app.test_server = lambda s: (time.sleep(0.6 * SPEED), [
         (True, "SSH connected", f"{s.ssh} · key from agent"), (True, "Data directory found", "48.60 GB in use"),
-        (True, "Docker container running", s.container), (True, "mmctl found", "mmctl: Version: 12.1.0")])[1]
+        (True, "Docker container running", s.container), (True, "mmctl works", "4 teams · Version: 12.1.0")])[1]
     app.test_database = lambda s: (time.sleep(0.6 * SPEED), [
         (True, "Database reachable", f"{s.pg.get('dbname')} · schema public · via SSH"),
         (True, "Mattermost tables found", "214 users")])[1]

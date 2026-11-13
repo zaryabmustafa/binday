@@ -27,6 +27,7 @@ Database tidy (no files; the space comes back with VACUUM):
 import argparse
 import json
 import logging
+import posixpath
 import shlex
 import socket
 import sys
@@ -133,6 +134,7 @@ class Session:
         self.s = settings
         self.errors: List[str] = []
         self.ssh = self.sftp = self.conn = self.cur = self._tunnel = None
+        self._local: Optional[bool] = None
         self._cols: Dict[str, List[str]] = {}
         try:
             if "ssh" in parts or "mmctl" in parts or ("db" in parts and settings.db_via_ssh):
@@ -194,8 +196,23 @@ class Session:
             raise RuntimeError(f"Remote command failed ({status}): {full}\nSTDERR: {err}")
         return out
 
+    @property
+    def local(self) -> bool:
+        """Whether mmctl's local mode works in the container (the server's EnableLocalMode and its socket).
+        Tried once with a real call, then every mmctl command uses it: local mode needs no login and
+        skips the API's EnableAPIChannelDeletion/EnableAPIPostDeletion checks."""
+        if self._local is None:
+            try:
+                self.run(["docker", "exec", "-i", self.s.container, "mmctl", "--local",
+                          "config", "get", "ServiceSettings.EnableLocalMode", "--json"])
+                self._local = True
+            except Exception:
+                self._local = False
+        return self._local
+
     def mmctl(self, *args: str, allow_fail: bool = False) -> str:
-        return self.run(["docker", "exec", "-i", self.s.container, "mmctl", *args], allow_fail=allow_fail)
+        local = ["--local"] if args[:2] != ("auth", "login") and self.local else []
+        return self.run(["docker", "exec", "-i", self.s.container, "mmctl", *local, *args], allow_fail=allow_fail)
 
     def q(self, table: str) -> str:
         """Quoted schema.table for a logical table name (fileinfo/posts/channels/users)."""
@@ -327,8 +344,9 @@ def test_mmctl(s: Settings) -> List[tuple]:
         enabled = channel_deletion_enabled(sess)
         rows.append((True, "Channel deletion is on", "EnableAPIChannelDeletion = true") if enabled else
                     (None, "Channel deletion is off", "Archived channels can be scanned but not deleted"))
-        if post_deletion_ok(sess) is not True:
-            rows.append((None, *POST_DELETION_OFF))
+        problem = post_deletion_problem(sess)
+        if problem:
+            rows.append((None, POST_DELETION_TITLE, problem))
     finally:
         sess.close()
     return rows
@@ -337,21 +355,22 @@ def test_mmctl(s: Settings) -> List[tuple]:
 # --------------------------------------------------------------------------- mmctl queries
 
 def channel_deletion_enabled(sess: Session) -> Optional[bool]:
+    if sess.local:  # local mode skips the API's EnableAPIChannelDeletion check
+        return True
     return config_enabled(sess, "ServiceSettings.EnableAPIChannelDeletion")
 
 
-def post_deletion_ok(sess: Session) -> Optional[bool]:
-    """Permanent post deletion (deleted messages, DM purges) needs EnableAPIPostDeletion,
-    except when mmctl runs in local mode, which skips that check."""
-    # read the container's environment from Docker: Mattermost's image has no shell or printenv
-    env = sess.run(["docker", "inspect", "-f", "{{range .Config.Env}}{{println .}}{{end}}", sess.s.container], allow_fail=True)
-    if any(line.strip().lower() == "mmctl_local=true" for line in env.splitlines()):
-        return True
-    return config_enabled(sess, "ServiceSettings.EnableAPIPostDeletion")
+POST_DELETION_TITLE = "Permanent post deletion unavailable"
 
 
-POST_DELETION_OFF = ("Permanent post deletion is off",
-                     "Deleted messages and DMs need ServiceSettings.EnableAPIPostDeletion = true (or mmctl in local mode)")
+def post_deletion_problem(sess: Session) -> Optional[str]:
+    """Why deleted messages and DMs can't be purged, or None if they can. `mmctl post delete --permanent`
+    only exists from Mattermost 10.2; through the API it also needs EnableAPIPostDeletion (local mode skips that)."""
+    if "--permanent" not in sess.mmctl("post", "delete", "--help", allow_fail=True):
+        return "This server's mmctl can't delete posts permanently (Mattermost 10.2 or later is needed)"
+    if sess.local or config_enabled(sess, "ServiceSettings.EnableAPIPostDeletion"):
+        return None
+    return "Deleted messages and DMs need ServiceSettings.EnableAPIPostDeletion = true (or mmctl local mode)"
 
 
 def config_enabled(sess: Session, key: str) -> Optional[bool]:
@@ -466,7 +485,9 @@ def db_orphans(sess: Session) -> List[Dict]:
 
 def _deleted_post_sql(sess: Session) -> str:
     p = "posts"
-    return f"p.{sess.col(p, 'DeleteAt')} > 0 AND coalesce(p.{sess.col(p, 'OriginalId')}, '') = ''"
+    # Content flagging and burn-on-read keep a scrubbed, deleted stub on purpose (audit trail): leave those.
+    return (f"p.{sess.col(p, 'DeleteAt')} > 0 AND coalesce(p.{sess.col(p, 'OriginalId')}, '') = '' "
+            f"AND p.{sess.col(p, 'Message')} NOT LIKE '*Content deleted as part of%%'")
 
 
 def deleted_posts(sess: Session) -> List[Dict]:
@@ -487,14 +508,22 @@ def deleted_posts(sess: Session) -> List[Dict]:
     return list(posts.values())
 
 
+def _abandoned_sql(sess: Session) -> str:
+    """An attachment upload session, untouched for a week, whose file never became an attachment.
+    (When an upload finishes Mattermost saves the FileInfo, then deletes the session; if that delete
+    fails the session stays behind, pointing at a live file.)"""
+    u, f = "uploadsessions", "fileinfo"
+    return (f"us.{sess.col(u, 'Type')} = 'attachment' AND us.{sess.col(u, 'CreateAt')} < %s "
+            f"AND NOT EXISTS (SELECT 1 FROM {sess.q(f)} fi WHERE fi.{sess.col(f, 'Path')} = us.{sess.col(u, 'Path')})")
+
+
 def abandoned_uploads(sess: Session) -> List[Dict]:
     """Resumable attachment uploads never finished; Mattermost never removes these."""
     if "uploadsessions" not in sess.t:
         return []
     u = "uploadsessions"
-    sess.cur.execute(f"SELECT {sess.col(u, 'Id')}, {sess.col(u, 'Filename')}, {sess.col(u, 'Path')} FROM {sess.q(u)} "
-                     f"WHERE {sess.col(u, 'Type')} = 'attachment' AND {sess.col(u, 'CreateAt')} < %s",
-                     (_now_ms() - UPLOAD_STALE_MS,))
+    sess.cur.execute(f"SELECT {sess.col(u, 'Id')}, {sess.col(u, 'Filename')}, {sess.col(u, 'Path')} FROM {sess.q(u)} us "
+                     f"WHERE {_abandoned_sql(sess)}", (_now_ms() - UPLOAD_STALE_MS,))
     out = []
     for upload_id, name, path in sess.cur.fetchall():
         if path:  # incomplete parts may be written as <path>.tmp (model.IncompleteUploadSuffix): use whichever exists
@@ -626,8 +655,8 @@ def still_eligible(sess: Session, item: Dict) -> bool:
         return sess.cur.fetchone() is not None
     if kind == "upload":
         u = "uploadsessions"
-        sess.cur.execute(f"SELECT 1 FROM {sess.q(u)} WHERE {sess.col(u, 'Id')} = %s AND {sess.col(u, 'Type')} = 'attachment' "
-                         f"AND {sess.col(u, 'CreateAt')} < %s", (item["id"], _now_ms() - UPLOAD_STALE_MS))
+        sess.cur.execute(f"SELECT 1 FROM {sess.q(u)} us WHERE us.{sess.col(u, 'Id')} = %s AND {_abandoned_sql(sess)}",
+                         (item["id"], _now_ms() - UPLOAD_STALE_MS))
         return sess.cur.fetchone() is not None
     if kind == "untracked":
         if _path_known(sess, item["id"]):
@@ -650,7 +679,12 @@ def still_eligible(sess: Session, item: Dict) -> bool:
 # --------------------------------------------------------------------------- files
 
 def _remote(sess: Session, rel: str) -> str:
-    return sess.s.remote_data_dir.rstrip("/") + "/" + rel.lstrip("/")
+    """Absolute path of a data-directory-relative path. Refuses (IOError, so callers treat it as missing)
+    anything that would leave the data directory, such as '../' in a path from the database."""
+    clean = posixpath.normpath(rel.lstrip("/"))
+    if clean in ("", ".") or clean == ".." or clean.startswith("../"):
+        raise IOError(f"Refusing a path outside the data directory: {rel!r}")
+    return sess.s.remote_data_dir.rstrip("/") + "/" + clean
 
 
 def measure_files(sess: Session, paths: List[str]):
@@ -675,12 +709,30 @@ def existing_sizes(sess: Session, paths: List[str]) -> Dict[str, int]:
     return out
 
 
+def _paths_in_use(sess: Session, paths: List[str]) -> Set[str]:
+    """Which of these paths a FileInfo row that isn't an orphan still points at. Mattermost's CopyFileInfos
+    (used by plugins) gives a copy a new id but the same files, so a path can belong to more than one row."""
+    if not paths or getattr(sess, "cur", None) is None or "fileinfo" not in getattr(sess, "t", {}):
+        return set()
+    f = "fileinfo"
+    cols = [sess.col(f, c) for c in ("Path", "ThumbnailPath", "PreviewPath")]
+    sess.cur.execute(f"SELECT {', '.join('fi.' + c for c in cols)} FROM {sess.q(f)} fi "
+                     f"WHERE ({' OR '.join(f'fi.{c} = ANY(%s)' for c in cols)}) AND NOT ({_orphan_sql(sess)})",
+                     (list(paths),) * 3)
+    return {p for row in sess.cur.fetchall() for p in row if p in paths}
+
+
 def delete_files(sess: Session, paths: List[str]) -> int:
-    """Delete files; returns bytes freed. Missing files are ignored, other failures recorded."""
+    """Delete files; returns bytes freed. Missing files are ignored, other failures recorded.
+    A file another live FileInfo row still uses is left in place."""
     freed = 0
+    in_use = _paths_in_use(sess, paths)
     for rel in paths:
-        full = _remote(sess, rel)
+        if rel in in_use:
+            logger.warning(f"Kept {rel}: another file record still uses it")
+            continue
         try:
+            full = _remote(sess, rel)
             size = sess.sftp.stat(full).st_size
         except IOError:
             continue
@@ -810,10 +862,13 @@ def apply(sess: Session, items: List[Dict],
                 status = "skipped"
                 logger.warning(f"Skipped {it['kind']} {it['id']}: changed since scan")
             elif it["kind"] == "orphan":
-                item_freed = delete_files(sess, it["paths"])
                 f = "fileinfo"
                 sess.cur.execute(f"DELETE FROM {sess.q(f)} fi WHERE fi.{sess.col(f, 'Id')} = %s "
                                  f"AND {_orphan_sql(sess)}", (it["id"],))
+                if sess.cur.rowcount == 1:  # still an orphan at the moment of deletion
+                    item_freed = delete_files(sess, it["paths"])
+                else:
+                    status = "skipped"
             elif it["kind"] == "upload":
                 item_freed = delete_files(sess, it["paths"])
                 u = "uploadsessions"
@@ -831,7 +886,8 @@ def apply(sess: Session, items: List[Dict],
                 if it["kind"] == "channel":
                     sess.mmctl("channel", "delete", it["id"], "--confirm")
                 elif it["kind"] == "deleted":
-                    if not before.get("_batched"):  # the batch failed: retry this one alone, so the error is its own
+                    if not before.get("_batched") and _post_exists(sess, it["id"]):
+                        # the batch failed and this post is still there: retry it alone, so the error is its own
                         sess.mmctl("post", "delete", it["id"], "--permanent", "--confirm")
                     before.pop("_batched", None)
                     # Mattermost's permanent delete keeps the message's earlier versions (edit history)
@@ -840,8 +896,8 @@ def apply(sess: Session, items: List[Dict],
                                      f"AND {sess.col(p, 'DeleteAt')} > 0", (it["id"],))
                 else:  # Mattermost can't delete DM channels; permanently delete every post (and its files) instead
                     posts = channel_post_ids(sess, it["id"])
-                    for i in range(0, len(posts), 100):
-                        sess.mmctl("post", "delete", *posts[i:i + 100], "--permanent", "--confirm")
+                    for b in range(0, len(posts), 100):
+                        sess.mmctl("post", "delete", *posts[b:b + 100], "--permanent", "--confirm")
                 delete_files(sess, it["paths"])  # whatever Mattermost left on disk
                 if it["kind"] == "channel" and it["paths"]:  # Mattermost's channel delete keeps the FileInfo rows
                     f = "fileinfo"
@@ -866,6 +922,12 @@ def apply(sess: Session, items: List[Dict],
 KIND_TABLES = {"channel": ("posts", "fileinfo"), "dm": ("posts", "fileinfo"), "deleted": ("posts", "fileinfo"),
                "orphan": ("fileinfo",), "upload": ("uploadsessions",), "history": ("posts",), "jobs": ("jobs",),
                "links": ("linkmetadata",), "untracked": (), "emoji": ()}
+
+
+def _post_exists(sess: Session, post_id: str) -> bool:
+    p = "posts"
+    sess.cur.execute(f"SELECT 1 FROM {sess.q(p)} WHERE {sess.col(p, 'Id')} = %s", (post_id,))
+    return sess.cur.fetchone() is not None
 
 
 def _delete_posts_batch(sess: Session, window: List[Dict], tried: Set[str]) -> Dict[str, Dict[str, int]]:
@@ -974,8 +1036,9 @@ def main():
         if "channel" in kinds and channel_deletion_enabled(sess) is not True:
             logger.error("ServiceSettings.EnableAPIChannelDeletion is false.")
             if args.execute: sys.exit(1)
-        if kinds & {"dm", "deleted"} and post_deletion_ok(sess) is not True:
-            logger.error(f"{POST_DELETION_OFF[0]}: {POST_DELETION_OFF[1]}.")
+        problem = post_deletion_problem(sess) if kinds & {"dm", "deleted"} else None
+        if problem:
+            logger.error(f"{POST_DELETION_TITLE}: {problem}.")
             if args.execute: sys.exit(1)
 
         items = collectable(scan(sess, kinds, progress=lambda m: print(".", end="", flush=True), limit=args.limit))

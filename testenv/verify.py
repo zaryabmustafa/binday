@@ -58,6 +58,10 @@ def main():
 
     post = "--post" in sys.argv
     checks = []
+    keep = set(seed.get("keep_paths", []))  # files a kept row still uses (shared copies) must stay even in a purged bin
+
+    def gone(paths):
+        return [p for p in paths if p not in keep]
 
     def expect(label, actual, wanted):
         checks.append((actual == wanted, label, actual, wanted))
@@ -65,7 +69,7 @@ def main():
     for name, c in seed["channels"].items():
         target = post and c["archived"] and name not in kept
         expect(f"channel {name}: row", rows("channels", [c["id"]]), 0 if target else 1)
-        expect(f"channel {name}: files on disk", on_disk(c.get("paths", [])), 0 if target else len(c.get("paths", [])))
+        expect(f"channel {name}: files on disk", on_disk(gone(c.get("paths", []))), 0 if target else len(gone(c.get("paths", []))))
     for name, d in seed["dms"].items():
         target = post and d["target"]
         # Mattermost can't delete DM channels: the conversation stays, its posts must be gone
@@ -74,7 +78,7 @@ def main():
         expect(f"DM {name}: files on disk", on_disk(d.get("paths", [])), 0 if target else len(d.get("paths", [])))
     n = len(seed["orphans"])
     expect("orphaned FileInfo rows", rows("fileinfo", seed["orphans"]), 0 if post else n)
-    expect("orphaned files on disk", on_disk(seed.get("orphan_paths", [])), 0 if post else len(seed.get("orphan_paths", [])))
+    expect("orphaned files on disk", on_disk(gone(seed.get("orphan_paths", []))), 0 if post else len(gone(seed.get("orphan_paths", []))))
     expect("unattached upload (draft): row kept", rows("fileinfo", [seed["unattached"]]), 1)
     expect("files that must stay: on disk", on_disk(seed.get("keep_paths", [])), len(seed.get("keep_paths", [])))
     expect("files that must stay: rows", rows("fileinfo", seed["keep_files"]), len(seed["keep_files"]))
@@ -99,6 +103,7 @@ def main():
         expect("link previews (old, recent)",
                psql("SELECT string_agg(hash::text, ',' ORDER BY hash) FROM linkmetadata WHERE hash IN (101, 102)"),
                "102" if post else "101,102")
+        expect("lingering session of a finished upload (kept)", rows("uploadsessions", [seed["lingering_session"]]), 1)
         avatars = sh("docker", "exec", "mm-purge-test-server-1", "sh", "-c", f"ls {DATA}/users/*/profile.png | wc -l").stdout.strip()
         expect("profile images untouched", int(avatars or 0) > 0, True)
 

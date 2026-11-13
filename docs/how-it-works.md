@@ -43,7 +43,10 @@ Every bin was checked against Mattermost 12.1's source and on a real test server
 - **Dry run first, always.** Scanning never changes anything.
 - **You confirm what you saw.** The dialog lists the exact items and sizes, and nothing happens until you type `DELETE`.
 - **Each item is checked again right before it's deleted.** If a channel was unarchived, a user reactivated or a message restored after the scan, that item is skipped.
-- **Permissions are checked up front.** Emptying DMs and deleting deleted messages needs `EnableAPIPostDeletion`, unless `mmctl` runs in local mode. Connect warns, and the confirm dialog won't delete those bins without it.
+- **Permissions are checked up front.** Binday tries `mmctl --local` once and uses local mode whenever it works (no login, no API permission checks). Otherwise emptying DMs and deleting deleted messages needs Mattermost 10.2+ and `EnableAPIPostDeletion`, and archived channels need `EnableAPIChannelDeletion`. Connect warns, and the confirm dialog and the CLI won't delete those bins without them.
+- **Shared files and the data directory are protected.** Before removing any file Binday checks that no other live file record still points at it, and refuses any path that would leave the data directory.
+- **Audit stubs stay.** Messages scrubbed by content flagging or burn-on-read keep a deleted stub on purpose; the deleted-messages bin leaves them.
+- **A finished upload is never an abandoned one.** An upload session whose file became an attachment is left alone, even if its session row lingered.
 - **Mattermost deletes first.** For channels and DMs, Binday asks Mattermost to delete, and only then removes leftover files. If Mattermost refuses, no files are touched.
 - **Failures don't stop the run, and they're never hidden.** Every problem is listed with its plan number and written to the log.
 

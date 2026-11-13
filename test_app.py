@@ -66,6 +66,8 @@ class FakeSession:
 
     def mmctl(self, *args, **kw):
         self.mmctl_calls.append(args)
+        if args[:2] == ("post", "delete"):  # like mmctl: deletes every id it can, then reports any failure
+            self.eligible -= {a for a in args[2:] if a not in self.fail_mmctl_for}
         if any(a in self.fail_mmctl_for for a in args):
             raise RuntimeError("mmctl failed")
         return ""
@@ -78,9 +80,11 @@ class FakeSession:
         self.sql.append((sql, params))
         self._last = params
         self._rows = [("post-of-" + params[0],)] if sql.startswith("SELECT Id FROM posts") else []
+        hit = bool(params) and isinstance(params[0], str) and params[0] in self.eligible
+        self.rowcount = 1 if sql.startswith("DELETE") and hit else 0
 
     def fetchone(self):
-        return (1,) if self._last and self._last[0] in self.eligible else None
+        return (1,) if self._last and isinstance(self._last[0], str) and self._last[0] in self.eligible else None
 
     def fetchall(self):
         return self._rows
@@ -155,6 +159,21 @@ def test_deleted_posts_go_in_one_batch():
     seen = []
     app.apply(sess, items, on_item=lambda it, st, freed, errs: seen.append((it["id"], st)))
     assert seen == [("p0", "deleted"), ("p1", "failed"), ("p2", "deleted")], seen
+    retried = [c for c in sess.mmctl_calls if c[:2] == ("post", "delete")][1:]
+    assert retried == [("post", "delete", "p1", "--permanent", "--confirm")], retried  # only the one still there
+
+
+def test_remote_refuses_paths_outside_data_dir():
+    sess = FakeSession(eligible=set())
+    assert app._remote(sess, "20200101/teams/a.png") == "/data/20200101/teams/a.png"
+    for bad in ("../etc/passwd", "20200101/../../etc/passwd", "..", ""):
+        try:
+            app._remote(sess, bad)
+        except IOError:
+            continue
+        raise AssertionError(f"accepted {bad!r}")
+    sess.disk = {"/etc/passwd": 1}
+    assert app.delete_files(sess, ["../etc/passwd"]) == 0 and "/etc/passwd" in sess.disk
 
 
 def test_vacuum_only_touched_tables():

@@ -10,6 +10,7 @@ All deletion logic lives in app.py; this file is UI only.
 """
 
 import json
+from typing import List
 import logging
 import os
 import sys
@@ -716,9 +717,9 @@ class PurgeApp:
             checks.append((True, "Channel deletion is on", "EnableAPIChannelDeletion = true") if self.deletion_enabled else
                           (None, "Channel deletion is off", "Archived channels can be scanned but not deleted. Set "
                                                             "ServiceSettings.EnableAPIChannelDeletion = true and reconnect."))
-            self.post_deletion = core.post_deletion_ok(self.sess)
-            if self.post_deletion is not True:
-                checks.append((None, *core.POST_DELETION_OFF))
+            self.post_problem = core.post_deletion_problem(self.sess)
+            if self.post_problem:
+                checks.append((None, core.POST_DELETION_TITLE, self.post_problem))
             self.storage_before = core.storage_usage(self.sess)
             checks.append((True, "Data directory found", f"{gb(self.storage_before)} in use"))
             self.server_name, self.server_state = self._profile_name(), "connected"
@@ -874,7 +875,7 @@ class PurgeApp:
         for n, r in enumerate(rows, 1):
             for it in r:
                 it["plan"] = n
-        deleted_plan = next((r[0]["plan"] for r in rows if r[0]["kind"] == "deleted"), len(rows) + 1)
+        deleted_plan = next((r[0]["plan"] for r in rows if r[0]["kind"] == "deleted"), None)
         for it in self.nested:
             it["plan"] = deleted_plan
         self.rows = rows
@@ -884,7 +885,7 @@ class PurgeApp:
     def _sel_items(self):
         sel = [it for i in sorted(self.selected) for it in self.rows[i]]
         deleted_row = next((i for i, r in enumerate(self.rows) if r[0]["kind"] == "deleted"), None)
-        if deleted_row is None or deleted_row in self.selected:
+        if deleted_row is not None and deleted_row in self.selected:
             # deleted messages inside a kept channel or DM still go, as part of the Deleted messages bin
             kept = {r[0]["id"] for i, r in enumerate(self.rows) if i not in self.selected and r[0]["kind"] in ("channel", "dm")}
             sel += core.collectable(self.nested, kept)
@@ -916,8 +917,8 @@ class PurgeApp:
                           lambda e, n=name: self._set_filter(n), KIND[next(iter(kinds))][1])
               for name, kinds in FILTERS if any(it["kind"] in kinds for it in self.items)]])
         toolbar = ft.Row([filters, ft.Container(expand=True), self.f_search,
-                          btn("Select none" if len(self.selected) == len(self.rows) else "Select all", None,
-                              lambda e: self._select_all(len(self.selected) != len(self.rows)), "text", small=True)])
+                          btn("Select none" if self._all_visible_selected() else "Select all", None,
+                              lambda e: self._select_all(not self._all_visible_selected()), "text", small=True)])
 
         max_bytes = max((sum(i["bytes"] for i in r) for r in self.rows), default=0)
         drows, shown = [], 0
@@ -944,7 +945,7 @@ class PurgeApp:
                 ft.DataCell(ft.Row([T(f"≈ {gb(sum(i['db_bytes'] for i in r))} of table", color=INK2)], alignment=ft.MainAxisAlignment.END)
                             if first["kind"] in core.TIDY else size_cell(nbytes, max_bytes, kept=not on))]))
         tbl = table(["Plan", "Name", "Bin", "Location", "Files", "Size"], drows, checkbox=True,
-                    on_select_all=lambda e: self._select_all(len(self.selected) != len(self.rows)))
+                    on_select_all=lambda e: self._select_all(not self._all_visible_selected()))
         orphan_note = " · each leftover and database bin is one row" if any(counts[k] for k in GROUPED) else ""
         table_panel = panel(ft.Column(spacing=0, expand=True, controls=[
             ft.Column([ft.Row([tbl])], scroll=ft.ScrollMode.AUTO, expand=True),
@@ -975,8 +976,19 @@ class PurgeApp:
         self.selected ^= {i}
         self.paint()
 
+    def _visible(self) -> List[int]:
+        """Indexes of the rows the filter and search currently show."""
+        return [i for i, r in enumerate(self.rows)
+                if (not self.filter_kind or r[0]["kind"] in dict(FILTERS)[self.filter_kind])
+                and (not self.search or self.search.lower() in row_name(r).lower())]
+
+    def _all_visible_selected(self) -> bool:
+        return set(self._visible()) <= self.selected
+
     def _select_all(self, value):
-        self.selected = set(range(len(self.rows))) if value else set()
+        """Tick or untick only the rows on screen: a row hidden by a filter keeps its choice."""
+        shown = set(self._visible())
+        self.selected = (self.selected | shown) if value else (self.selected - shown)
         self.paint()
 
     # ----------------------------------------------------------------- 3b. Confirm
@@ -986,7 +998,7 @@ class PurgeApp:
             return
         size_str = gb(sum(i["bytes"] for i in sel))
         no_channels = self.deletion_enabled is not True and any(i["kind"] == "channel" for i in sel)
-        no_posts = getattr(self, "post_deletion", True) is not True and any(i["kind"] in ("dm", "deleted") for i in sel)
+        no_posts = bool(getattr(self, "post_problem", None)) and any(i["kind"] in ("dm", "deleted") for i in sel)
         blocked = no_channels or no_posts
         lines = []
         tidy = [i for i in sel if i["kind"] in core.TIDY]
@@ -1025,8 +1037,8 @@ class PurgeApp:
         typed.on_change, confirm.on_click = on_type, do_delete
         warn = ([self._check_row(None, "Channel deletion is off on the server",
                                  "Untick archived channels, or set EnableAPIChannelDeletion = true and reconnect.")] if no_channels else []) + \
-               ([self._check_row(None, core.POST_DELETION_OFF[0],
-                                 "Untick DMs and deleted messages, or set EnableAPIPostDeletion = true and reconnect.")] if no_posts else [])
+               ([self._check_row(None, core.POST_DELETION_TITLE,
+                                 f"{getattr(self, 'post_problem', '')}. Untick DMs and deleted messages to go on.")] if no_posts else [])
         self.page.show_dialog(ft.AlertDialog(
             modal=True, bgcolor=SURF, barrier_color=ft.Colors.with_opacity(0.46, C.SCRIM),
             shape=ft.RoundedRectangleBorder(radius=22), content_padding=ft.Padding.only(left=28, right=28, top=26, bottom=8),

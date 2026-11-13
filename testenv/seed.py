@@ -188,6 +188,23 @@ def main():
          f"(101, 'https://example.com/old', {now - 40 * day}, 'opengraph', '{{}}'), "
          f"(102, 'https://example.com/new', {now}, 'opengraph', '{{}}')")
 
+    # files shared by two FileInfo rows (Mattermost's CopyFileInfos, used by plugins, keeps the paths):
+    # a live copy of an archived-channel file and of an orphan must keep those files on disk
+    holder = call("POST", "/posts", admin, body={"channel_id": seed["channels"]["keep-me"]["id"], "message": "copies"})[1]["id"]
+    seed["shared_copies"] = []
+    for src in (seed["channels"]["old-project"]["file_ids"][0], seed["orphans"][0]):
+        new_id = uuid.uuid4().hex[:26]
+        psql(f"INSERT INTO fileinfo SELECT (jsonb_populate_record(NULL::fileinfo, to_jsonb(f) || "
+             f"jsonb_build_object('id', '{new_id}', 'postid', '{holder}'))).* FROM fileinfo f WHERE id = '{src}'")
+        seed["shared_copies"].append(new_id)
+        seed["keep_files"].append(new_id)
+    # a finished upload whose session row lingered (Mattermost only logs if deleting it fails)
+    live = seed["channels"]["keep-me"]["file_ids"][0]
+    seed["lingering_session"] = uuid.uuid4().hex[:26]
+    psql(f"INSERT INTO uploadsessions (id, type, createat, userid, channelid, filename, path, filesize, fileoffset) "
+         f"SELECT '{seed['lingering_session']}', 'attachment', {now - 10 * day}, creatorid, '{seed['channels']['keep-me']['id']}', "
+         f"name, path, size, size FROM fileinfo WHERE id = '{live}'")
+
     out.write_text(json.dumps(seed, indent=2))
     print(f"Seeded. Users/passwords and ids written to {out}.")
     print("Expect the tool to find: 3 archived channels (2 with files), 3 DMs with deactivated users, "

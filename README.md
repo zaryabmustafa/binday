@@ -67,7 +67,7 @@ Mattermost's data retention is an Enterprise feature, so on **Team Edition** thi
 - A Mattermost server running in **Docker** (any edition), with **PostgreSQL**.
 - **SSH access** to that server (password, key file or SSH agent).
 - To delete archived channels: `ServiceSettings.EnableAPIChannelDeletion = true`.
-- To empty DMs and delete deleted messages: `ServiceSettings.EnableAPIPostDeletion = true`, unless `mmctl` runs in local mode inside the container (`MMCTL_LOCAL=true`). **Connect** tells you if it's needed.
+- To empty DMs and delete deleted messages: Mattermost **10.2 or later** (older `mmctl` can't delete posts permanently), and `ServiceSettings.EnableAPIPostDeletion = true` unless `mmctl` local mode works in the container. Binday uses local mode whenever it works. **Connect** tells you what's missing.
 - A recent database and data directory **backup**. Deletions are permanent.
 
 ### Install
@@ -101,6 +101,7 @@ Binday deletes data for good, so it's built to make mistakes hard:
 - **You see exactly what goes.** The confirm dialog lists every bin with its size, and nothing happens until you type `DELETE`.
 - **Each item is checked again right before deletion.** If a channel was unarchived, a user reactivated or a message restored after the scan, that item is skipped.
 - **Mattermost deletes first.** Channels and DMs go through Mattermost's own `mmctl` commands. Binday removes leftover files only after that succeeds, so a refusal touches nothing.
+- **Shared files stay.** A file that another live file record still uses (plugins can copy a record and keep its files) is never removed. Paths that would leave the data directory are refused.
 - **Nothing is hidden.** Every skipped or failed item is listed with its cause and the next step, and every run is logged.
 - **Uploads in drafts are safe.** Files not yet attached to a message are never treated as orphans, uploads untouched for less than a week and stray files younger than a day are left alone, and the untracked-files bin is off until you tick it. It refuses to run if most attachment files look untracked, which means the data directory doesn't match the database.
 - **Mattermost's own folders are never touched.** Avatars, team icons, branding, emoji in use, plugins, exports and imports stay. The untracked-files check only looks in the dated attachment folders.

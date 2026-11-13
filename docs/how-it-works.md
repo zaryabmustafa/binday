@@ -14,9 +14,22 @@ Binday runs on your own computer and reaches the Mattermost server over SSH. Not
 |---|---|---|
 | **Archived channels** | The channel, its messages and every file posted in it (`mmctl channel delete`) | Active channels, even empty ones |
 | **Deactivated users' DMs** | Every message and file in direct messages with deactivated users (`mmctl post delete --permanent`) | The user accounts, DMs between active users, and the empty conversation itself, because Mattermost doesn't allow deleting DM channels |
-| **Orphaned files** | Files whose message no longer exists, and their `FileInfo` rows | Avatars, plugins, and uploads not yet attached to a message (drafts) |
+| **Deleted messages** | Messages people deleted, which Mattermost only hides, and their files (`mmctl post delete --permanent`) | Every message still in a conversation |
+| **Orphaned files** | Files whose message no longer exists, or that an edit removed and no version of the message still uses, and their `FileInfo` rows | Avatars, plugins, and uploads not yet attached to a message (drafts) |
+| **Abandoned uploads** | Uploads that never finished, after a day, and their `UploadSessions` rows | Uploads still in progress |
+| **Untracked files** | Files in the dated attachment folders (`YYYYMMDD/`) that no database row points to, untouched for a day | Everything outside those folders: avatars, team icons, branding, emoji, plugins, exports, imports |
+| **Deleted emoji images** | The `image_deleted` file Mattermost keeps when a custom emoji is deleted | Every emoji still in use |
+| **Edit history** (off by default) | Earlier versions of edited messages. Users lose "Show edit history" and restore | The current text of every message |
+| **Old job records** | Finished `Jobs` rows older than 30 days | Running, pending and recent jobs |
+| **Link preview cache** | `LinkMetadata` rows for messages older than 30 days. Mattermost fetches a preview again when one is viewed | Previews on recent messages |
 
-Binday finds items from the database, never by scanning the disk blindly, so system files are never in scope.
+Binday finds items from the database. The one disk check, for untracked files, only looks inside the dated attachment folders, so Mattermost's own folders are never in scope. The last three bins only delete database rows: that space comes back after `VACUUM FULL`.
+
+Every bin was checked against Mattermost 12.1's source and on a real test server (`testenv/`). Some things Mattermost keeps that you might expect gone:
+
+- Deleting a message keeps the row and every file. Restoring an older version of an edited message brings back attachments the edit removed, so those count as orphans only once no version lists them.
+- `mmctl channel delete` removes the posts but keeps their `FileInfo` rows and files. Binday removes both afterwards.
+- Permanently deleting a thread's first message drops its replies' rows but not their files, so Binday deletes replies first.
 
 ## The four steps
 
@@ -33,7 +46,7 @@ Binday finds items from the database, never by scanning the disk blindly, so sys
 - **Mattermost deletes first.** For channels and DMs, Binday asks Mattermost to delete, and only then removes leftover files. If Mattermost refuses, no files are touched.
 - **Failures don't stop the run, and they're never hidden.** Every problem is listed with its plan number and written to the log.
 
-`VACUUM FULL` is optional. Deleting rows frees space inside PostgreSQL, but the database file only shrinks after a vacuum, which locks the `FileInfo` table while it runs.
+`VACUUM FULL` is optional. Deleting rows frees space inside PostgreSQL, but the database file only shrinks after a vacuum, which locks each table Binday cleaned (`FileInfo`, `Posts`, `UploadSessions`, `Jobs`, `LinkMetadata`) while it runs.
 
 ## Where things live
 

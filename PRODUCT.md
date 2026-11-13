@@ -16,7 +16,7 @@ Administrators of self-hosted Mattermost Team Edition servers, who run cleanup o
 
 ## Product Purpose
 
-Reclaims disk space on a self-hosted Mattermost server by permanently deleting archived channels, direct messages of deactivated users, and orphaned file attachments (files whose post no longer exists), then optionally running `VACUUM FULL` on the FileInfo table. Success: the admin sees exactly what will be removed and how much space it frees, deletes only what they chose, and gets an honest report of what happened.
+Reclaims disk space on a self-hosted Mattermost server by permanently deleting what Team Edition keeps forever, sorted into ten bins: archived channels, DMs of deactivated users, deleted messages and their files, orphaned files, abandoned uploads, untracked files, deleted emoji images, and three database tidies (edit history, old job records, link preview cache). Then optionally `VACUUM FULL` on the tables it cleaned. Success: the admin sees exactly what will be removed and how much space it frees, deletes only what they chose, and gets an honest report of what happened.
 
 ## Positioning
 

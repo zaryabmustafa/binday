@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-Python tool that reclaims disk space on a self-hosted Mattermost (Team Edition) server by permanently deleting archived channels, deactivated users' DMs and orphaned file attachments, then optionally running `VACUUM FULL`. A CLI (`app.py`) and a Flet desktop app (`gui.py`) share one core. User docs: `README.md`. Product truth: `PRODUCT.md`. Design system: `DESIGN.md` (+ `.impeccable/design.json`); the approved screens are `mockup/index.html`.
+Python tool that reclaims disk space on a self-hosted Mattermost (Team Edition) server: ten bins (archived channels, deactivated users' DMs, deleted messages, orphaned files, abandoned uploads, untracked files, deleted emoji images, and three database tidies: edit history, old jobs, link previews), then optionally `VACUUM FULL`. A CLI (`app.py`) and a Flet desktop app (`gui.py`) share one core. User docs: `README.md`. Product truth: `PRODUCT.md`. Design system: `DESIGN.md` (+ `.impeccable/design.json`); the approved screens are `mockup/index.html`.
 
 **Deletions are irreversible.** Treat any change to deletion logic, SQL, eligibility re-checks or path handling as high-risk.
 
@@ -21,7 +21,7 @@ python -m venv .venv && .venv/Scripts/python -m pip install -r requirements.txt
 .venv/Scripts/python test_app.py
 .venv/Scripts/python gui.py --demo          # desktop window, synthetic data
 .venv/Scripts/python gui.py --demo --web    # browser at http://127.0.0.1:8550 (.claude/launch.json "purge-demo-web")
-python app.py --ssh root@HOST[:port] [--ssh-password PW] --pg-dsn "host=... dbname=mattermost user=mmuser password=..." [--db-via-ssh] --remote-data-dir /path/to/data [--mm-container mattermost] [--purge-archived-channels] [--purge-deactivated-users] [--purge-db-orphans] [--vacuum] [--limit N] [--execute]
+python app.py --ssh root@HOST[:port] [--ssh-password PW] --pg-dsn "host=... dbname=mattermost user=mmuser password=..." [--db-via-ssh] --remote-data-dir /path/to/data [--mm-container mattermost] [--purge-archived-channels] [--purge-deactivated-users] [--purge-deleted-posts] [--purge-db-orphans] [--purge-abandoned-uploads] [--purge-untracked-files] [--purge-deleted-emoji] [--tidy-edit-history] [--tidy-jobs] [--tidy-link-previews] [--vacuum] [--limit N] [--execute]
 ```
 
 - The CLI needs at least one `--purge-*`/`--vacuum` flag; the default is a dry run. Never run `--execute`, or confirm a delete in the GUI, against a real server unless the user explicitly asks.
@@ -33,11 +33,12 @@ python app.py --ssh root@HOST[:port] [--ssh-password PW] --pg-dsn "host=... dbna
 
 - `Session` connects SSH (key/agent when there is no password; system known_hosts loaded, so a changed key still fails), SFTP, then Postgres (`autocommit=True`: needed for VACUUM, so every DELETE commits at once). With `db_via_ssh` the pg host/port are as seen from the server.
 - `detect_mm_tables` finds the schema holding fileinfo/posts/channels/users; always use `sess.q(table)` and `sess.col(table, "Name")` (case-insensitive) in SQL, with values as `%s` params.
-- Plan item: `{kind: channel|dm|orphan, id, label, group, paths, bytes, missing, [user_id], [plan]}`. The GUI adds `plan` numbers sorted by size; orphans share one plan number (one row).
-- `apply()` runs items in the given order. For each: `still_eligible()` re-checks it (channel still archived / DM user still deactivated / file still orphaned with a non-empty PostId). Channels: `mmctl channel delete` first, then remove files. DMs: Mattermost refuses to delete DM channels ("Unable to delete direct or group message channels"), so every post is removed with `mmctl post delete --permanent` and the empty DM stays; then leftover files are removed. Mattermost's delete always runs before ours, so a failed mmctl touches no files. Orphans: files first, then the FileInfo row.
+- Plan item: `{kind, id, label, group, paths, bytes, missing, [user_id], [plan]}`; `KINDS` in app.py lists the ten kinds. Database tidies (`TIDY`: history, jobs, links) have `bytes: 0` (no disk until VACUUM) plus `rows`, `db_bytes` (estimate) and `at` (scan time, so apply deletes exactly what was counted). The GUI adds `plan` numbers sorted by size; every bin except channels and DMs is one row (`GROUPED`).
+- Verified Mattermost 12.1 behaviour (source + testenv): soft-deleting a post keeps the row and files; an edit that drops an attachment only soft-deletes its FileInfo and restoring history brings it back; `mmctl channel delete` keeps FileInfo rows and files; permanently deleting a thread root drops reply rows but not their files (so replies go first); abandoned resumable uploads and `emoji/<id>/image_deleted` are never cleaned. Untracked-file scans only walk `YYYYMMDD/` folders.
+- `apply()` runs items in the given order. For each: `still_eligible()` re-checks it (channel still archived / DM user still deactivated / file still orphaned with a non-empty PostId). Channels: `mmctl channel delete` first, then remove files. DMs: Mattermost refuses to delete DM channels ("Unable to delete direct or group message channels"), so every post is removed with `mmctl post delete --permanent` and the empty DM stays; then leftover files are removed. Mattermost's delete always runs before ours, so a failed mmctl touches no files. Channels then delete their leftover FileInfo rows. Deleted posts: `mmctl post delete --permanent` (removes files and FileInfo). Orphans: files first, then the FileInfo row. Uploads: files, then the UploadSessions row. Untracked/emoji: files only. Tidies: one DELETE with the scan-time cutoff.
 - `mmctl ... --json` prints `null` (not `[]`) for empty lists. `on_item(item, status, freed, new_errors)` gets `deleted|skipped|failed`. An item with any error counts as failed, even if some files went.
 - Errors go through `sess.error()` (collected and logged). The CLI exits 1 if any occurred.
-- Empty or NULL `PostId` = an upload not yet attached to a post. It is never treated as an orphan.
+- Empty or NULL `PostId` = an upload not yet attached to a post. It is never treated as an orphan. Uploads and untracked files younger than a day (`STALE_MS`) are never in scope.
 
 ## GUI conventions (gui.py)
 

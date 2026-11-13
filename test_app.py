@@ -47,12 +47,13 @@ class FakeSession:
         self.sftp = self
         self.cur = self
         self._rows = []
+        self.rowcount = 0
 
     # sftp
     def stat(self, path):
         if path not in self.disk:
             raise IOError(path)
-        class St: st_size = self.disk[path]
+        class St: st_size, st_mtime = self.disk[path], 0
         return St()
 
     def remove(self, path):
@@ -115,6 +116,42 @@ def test_failed_mmctl_leaves_files_alone():
                     on_item=lambda it, st, freed, errs: seen.append((st, freed, len(errs))))
     assert res["bytes"] == 0 and seen == [("failed", 0, 1)], (res, seen)
     assert sess.disk == {"/data/a/1": 100} and not sess.removed
+
+
+def test_new_bins_apply():
+    """Deleted posts go through mmctl; uploads drop their row; untracked/emoji only lose files; tidies only run SQL."""
+    items = [
+        {"kind": "deleted", "id": "p1", "label": "in Town", "paths": ["d/1"]},
+        {"kind": "upload", "id": "u1", "label": "big.bin", "paths": ["u/1"]},
+        {"kind": "untracked", "id": "x/1", "label": "stray", "paths": ["x/1"]},
+        {"kind": "emoji", "id": "e1", "label": ":gone:", "paths": ["emoji/e1/image_deleted"]},
+        {"kind": "jobs", "id": "jobs", "label": "5 rows", "paths": [], "bytes": 0, "at": 10 ** 13},
+    ]
+    sess = FakeSession(eligible={"p1", "u1", "e1"})
+    sess.t = {k: k for k in ("posts", "fileinfo", "uploadsessions", "emoji", "jobs")}
+    sess.disk = {"/data/d/1": 10, "/data/u/1": 20, "/data/x/1": 30, "/data/emoji/e1/image_deleted": 40}
+    app._known_paths = lambda s: set()  # nothing points at x/1
+    seen = []
+    res = app.apply(sess, items, on_item=lambda it, st, freed, errs: seen.append((it["id"], st)))
+    assert [s for _, s in seen] == ["deleted"] * 5, seen
+    assert ("post", "delete", "p1", "--permanent", "--confirm") in sess.mmctl_calls
+    assert sess.disk == {}, sess.disk
+    assert any(s.startswith("DELETE FROM uploadsessions") and p == ("u1",) for s, p in sess.sql)
+    assert any(s.startswith("DELETE FROM jobs") for s, _ in sess.sql)
+    assert res["bytes"] == 100 and not sess.errors
+
+
+def test_tidy_never_counts_as_disk():
+    """Database tidies free no disk until VACUUM: their bytes are 0, the estimate lives in db_bytes."""
+    class Cur(FakeSession):
+        def execute(self, sql, params=()):
+            self._one = (12,) if "count(*) FROM" in sql and "pg_total" not in sql else (1200, 120)
+        def fetchone(self):
+            return self._one
+    sess = Cur(eligible=set())
+    sess.t = {"jobs": "Jobs"}
+    it = app.tidy_item(sess, "jobs")
+    assert it["bytes"] == 0 and it["rows"] == 12 and it["db_bytes"] == 120, it
 
 
 if __name__ == "__main__":

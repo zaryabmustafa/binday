@@ -66,7 +66,8 @@ Mattermost's data retention is an Enterprise feature, so on **Team Edition** thi
 
 - A Mattermost server running in **Docker** (any edition), with **PostgreSQL**.
 - **SSH access** to that server (password, key file or SSH agent).
-- To delete archived channels: `ServiceSettings.EnableAPIChannelDeletion = true`. The other bins don't need it.
+- To delete archived channels: `ServiceSettings.EnableAPIChannelDeletion = true`.
+- To empty DMs and delete deleted messages: `ServiceSettings.EnableAPIPostDeletion = true`, unless `mmctl` runs in local mode inside the container (`MMCTL_LOCAL=true`). **Connect** tells you if it's needed.
 - A recent database and data directory **backup**. Deletions are permanent.
 
 ### Install
@@ -101,7 +102,7 @@ Binday deletes data for good, so it's built to make mistakes hard:
 - **Each item is checked again right before deletion.** If a channel was unarchived, a user reactivated or a message restored after the scan, that item is skipped.
 - **Mattermost deletes first.** Channels and DMs go through Mattermost's own `mmctl` commands. Binday removes leftover files only after that succeeds, so a refusal touches nothing.
 - **Nothing is hidden.** Every skipped or failed item is listed with its cause and the next step, and every run is logged.
-- **Uploads in drafts are safe.** Files not yet attached to a message are never treated as orphans, and uploads or stray files younger than a day are left alone.
+- **Uploads in drafts are safe.** Files not yet attached to a message are never treated as orphans, uploads untouched for less than a week and stray files younger than a day are left alone, and the untracked-files bin is off until you tick it. It refuses to run if most attachment files look untracked, which means the data directory doesn't match the database.
 - **Mattermost's own folders are never touched.** Avatars, team icons, branding, emoji in use, plugins, exports and imports stay. The untracked-files check only looks in the dated attachment folders.
 
 [All the rules →](docs/how-it-works.md#safety-rules)
@@ -124,7 +125,7 @@ No. Mattermost only hides a deleted message: the row and every attached file sta
 File records and uploads whose message no longer exists, for example after posts were removed from the database. They take disk space but nobody can see them. Binday deletes the files and their `FileInfo` rows.
 
 **Why doesn't my disk space drop after deleting?**
-The data directory shrinks right away. The PostgreSQL database file only shrinks after `VACUUM FULL`, which Binday can run for you. It locks each table Binday cleaned while it runs, so use a maintenance window.
+The data directory shrinks right away. The PostgreSQL database file only shrinks after `VACUUM FULL`, which Binday can run for you. It only rewrites the tables that run deleted from, and locks each while it runs, so use a maintenance window.
 
 **Does Binday need Docker?**
 Yes, today it runs `mmctl` inside your Mattermost container (named `mattermost` by default; you can change it). Installs without Docker aren't supported yet.

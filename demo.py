@@ -131,4 +131,5 @@ def install(fast: bool = False):
     app.storage_usage = storage_usage
     app.scan = scan
     app.apply = apply_and_shrink
-    app.vacuum = lambda sess: time.sleep(1.5 * SPEED)
+    app.vacuum = lambda sess, tables=(): time.sleep(1.5 * SPEED)
+    app.post_deletion_ok = lambda sess: True

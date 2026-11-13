@@ -130,22 +130,58 @@ def test_new_bins_apply():
     sess = FakeSession(eligible={"p1", "u1", "e1"})
     sess.t = {k: k for k in ("posts", "fileinfo", "uploadsessions", "emoji", "jobs")}
     sess.disk = {"/data/d/1": 10, "/data/u/1": 20, "/data/x/1": 30, "/data/emoji/e1/image_deleted": 40}
-    app._known_paths = lambda s: set()  # nothing points at x/1
+    real, app._path_known = app._path_known, lambda s, path: False  # nothing points at x/1
     seen = []
-    res = app.apply(sess, items, on_item=lambda it, st, freed, errs: seen.append((it["id"], st)))
+    try:
+        res = app.apply(sess, items, on_item=lambda it, st, freed, errs: seen.append((it["id"], st)))
+    finally:
+        app._path_known = real
     assert [s for _, s in seen] == ["deleted"] * 5, seen
     assert ("post", "delete", "p1", "--permanent", "--confirm") in sess.mmctl_calls
     assert sess.disk == {}, sess.disk
     assert any(s.startswith("DELETE FROM uploadsessions") and p == ("u1",) for s, p in sess.sql)
     assert any(s.startswith("DELETE FROM jobs") for s, _ in sess.sql)
     assert res["bytes"] == 100 and not sess.errors
+    assert any(s.startswith("DELETE FROM posts WHERE OriginalId") and p == ("p1",) for s, p in sess.sql)  # its edit history
+
+
+def test_deleted_posts_go_in_one_batch():
+    """A run of deleted messages is one mmctl call, in plan order; a failed batch retries each alone."""
+    items = [{"kind": "deleted", "id": f"p{i}", "label": "m", "paths": []} for i in range(3)]
+    sess = FakeSession(eligible={"p0", "p1", "p2"})
+    app.apply(sess, items)
+    assert [c for c in sess.mmctl_calls if c[:2] == ("post", "delete")] == [("post", "delete", "p0", "p1", "p2", "--permanent", "--confirm")]
+    sess = FakeSession(eligible={"p0", "p1", "p2"}, fail_mmctl_for={"p1"})
+    seen = []
+    app.apply(sess, items, on_item=lambda it, st, freed, errs: seen.append((it["id"], st)))
+    assert seen == [("p0", "deleted"), ("p1", "failed"), ("p2", "deleted")], seen
+
+
+def test_vacuum_only_touched_tables():
+    assert app.vacuum_tables([{"kind": "orphan"}, {"kind": "untracked"}]) == ["fileinfo"]
+    assert app.vacuum_tables([{"kind": "jobs"}, {"kind": "deleted"}]) == ["fileinfo", "jobs", "posts"]
+
+
+def test_untracked_sanity_check():
+    app.check_untracked_sane(100, 95, 5)  # a few strays: fine
+    try:
+        app.check_untracked_sane(100, 3, 97)  # nearly nothing matches the database: wrong folder
+    except RuntimeError:
+        return
+    raise AssertionError("expected the untracked scan to refuse")
+
+
+def test_collectable_keeps_nested_unless_parent_kept():
+    items = [{"kind": "channel", "id": "c1"}, {"kind": "deleted", "id": "p1", "inside": "c1"}, {"kind": "deleted", "id": "p2"}]
+    assert [i["id"] for i in app.collectable(items)] == ["c1", "p2"]
+    assert [i["id"] for i in app.collectable(items, {"c1"})] == ["c1", "p1", "p2"]
 
 
 def test_tidy_never_counts_as_disk():
     """Database tidies free no disk until VACUUM: their bytes are 0, the estimate lives in db_bytes."""
     class Cur(FakeSession):
         def execute(self, sql, params=()):
-            self._one = (12,) if "count(*) FROM" in sql and "pg_total" not in sql else (1200, 120)
+            self._one = (1200, 120) if "pg_class" in sql else (12,)
         def fetchone(self):
             return self._one
     sess = Cur(eligible=set())

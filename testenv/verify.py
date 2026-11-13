@@ -52,6 +52,8 @@ def main():
             c["paths"] = paths_for(c["file_ids"])
         seed["orphan_paths"] = paths_for(seed["orphans"])
         seed["keep_paths"] = paths_for(seed["keep_files"])
+        if "deleted_post" in seed:
+            seed["deleted_paths"] = paths_for(seed["deleted_post"]["file_ids"])
         SEED.write_text(json.dumps(seed, indent=2))
 
     post = "--post" in sys.argv
@@ -75,6 +77,30 @@ def main():
     expect("orphaned files on disk", on_disk(seed.get("orphan_paths", [])), 0 if post else len(seed.get("orphan_paths", [])))
     expect("unattached upload (draft): row kept", rows("fileinfo", [seed["unattached"]]), 1)
     expect("files that must stay: on disk", on_disk(seed.get("keep_paths", [])), len(seed.get("keep_paths", [])))
+    expect("files that must stay: rows", rows("fileinfo", seed["keep_files"]), len(seed["keep_files"]))
+
+    if "deleted_post" in seed:  # the newer bins (seed.py from this version on)
+        d = seed["deleted_post"]
+        expect("deleted message: row", rows("posts", [d["post_id"]]), 0 if post else 1)
+        expect("deleted message: edit history", int(psql(f"SELECT count(*) FROM posts WHERE originalid = '{d['post_id']}'")), 0 if post else 1)
+        expect("deleted message: files on disk", on_disk(seed.get("deleted_paths", [])), 0 if post else len(seed.get("deleted_paths", [])))
+        expect("edited post: still live", int(psql(f"SELECT count(*) FROM posts WHERE id = '{seed['edited_post']['post_id']}' AND deleteat = 0")), 1)
+        up = seed["uploads"]
+        expect("abandoned upload: row", rows("uploadsessions", [up["abandoned"]["id"]]), 0 if post else 1)
+        expect("abandoned upload: file", on_disk([up["abandoned"]["path"]]), 0 if post else 1)
+        expect("in-progress upload: row and file", rows("uploadsessions", [up["in-progress"]["id"]]) + on_disk([up["in-progress"]["path"]]), 2)
+        expect("untracked old file", on_disk([seed["untracked"]["old"]]), 0 if post else 1)
+        expect("untracked fresh file (kept)", on_disk([seed["untracked"]["fresh"]]), 1)
+        expect("deleted emoji image", on_disk([seed["emoji_deleted"]]), 0 if post else 1)
+        cutoff = "(extract(epoch from now()) * 1000)::bigint - 30 * 86400000::bigint"
+        old_jobs = int(psql(f"SELECT count(*) FROM jobs WHERE createat < {cutoff} AND status NOT IN ('in_progress', 'pending')"))
+        expect("old finished jobs", min(old_jobs, 1), 0 if post else 1)
+        expect("old running job (kept)", int(psql("SELECT count(*) FROM jobs WHERE type = 'seed_running'")), 1)
+        expect("link previews (old, recent)",
+               psql("SELECT string_agg(hash::text, ',' ORDER BY hash) FROM linkmetadata WHERE hash IN (101, 102)"),
+               "102" if post else "101,102")
+        avatars = sh("docker", "exec", "mm-purge-test-server-1", "sh", "-c", f"ls {DATA}/users/*/profile.png | wc -l").stdout.strip()
+        expect("profile images untouched", int(avatars or 0) > 0, True)
 
     for ok, label, actual, wanted in checks:
         print(f"{'PASS' if ok else 'FAIL'}  {label}: {actual} (expected {wanted})")

@@ -72,7 +72,7 @@ KIND = {  # icon, chip bg, chip fg, short label, bin name, removes, stays
     "orphan": (ft.Icons.LINK_OFF_ROUNDED, _LEFT, _ON_LEFT, "Orphaned", "Orphaned files",
                "Files whose message is gone, or that an edit removed for good, and their records", "Avatars, plugins, uploads in drafts"),
     "upload": (ft.Icons.CLOUD_OFF_ROUNDED, _LEFT, _ON_LEFT, "Upload", "Abandoned uploads",
-               "Uploads that never finished, after a day", "Uploads still in progress"),
+               "Uploads that never finished, untouched for a week", "Uploads in progress or paused for less than a week"),
     "untracked": (ft.Icons.FIND_IN_PAGE_ROUNDED, _LEFT, _ON_LEFT, "Untracked", "Untracked files",
                   "Files in attachment folders that no record points to, after a day", "Avatars, emoji, branding, plugins, exports"),
     "emoji": (ft.Icons.EMOJI_EMOTIONS_ROUNDED, _LEFT, _ON_LEFT, "Emoji", "Deleted emoji images",
@@ -98,6 +98,9 @@ LOCATION = {"dm": "DM channel", "orphan": "FileInfo", "deleted": "Posts", "uploa
             "untracked": "Attachments", "emoji": "emoji folder"}
 
 
+assert set(KIND) == set(PLURAL) == set(CHIP_LABEL) == set(core.KINDS) == set(core.KIND_TABLES), "a bin is missing a label"
+
+
 def count_of(items) -> int:
     """How many things a group of items is: database rows for a tidy, else items."""
     return sum(i.get("rows", 1) for i in items)
@@ -106,10 +109,6 @@ def count_of(items) -> int:
 def row_name(r) -> str:
     k = r[0]["kind"]
     return f"{count_of(r):,} {PLURAL[k]}" if k in GROUPED else r[0]["label"]
-
-
-def legend_name(k) -> str:
-    return CHIP_LABEL[k]
 
 
 def db_legend(items, done=None) -> list:
@@ -330,10 +329,12 @@ def what_to_do(status: str, errors) -> str:
     text = " ".join(errors).lower()
     if status == "skipped":
         return "Nothing. It changed after the scan, so it was left as it was."
+    if "post delete" in text:
+        return "Set EnableAPIPostDeletion = true (or run mmctl in local mode), then scan again."
+    if "channel delete" in text:
+        return "Check that channel deletion is enabled, then scan again."
     if "permission" in text:
         return "Fix file ownership in the data directory, then scan again."
-    if "mmctl" in text or "channel" in text:
-        return "Check that channel deletion is enabled, then scan again."
     return "See the log for details, then scan again."
 
 
@@ -366,7 +367,8 @@ class PurgeApp:
         self.f_mm_server = field("Server URL", hint="http://localhost:8065", expand=True)
         self.f_mm_token = field("Access token", password=True, expand=True)
         # scan
-        self.kinds = set(KIND) - {"history"}  # edit history changes what users see: opt in
+        self.kinds = set(KIND) - {"history", "untracked"}  # opt in: edit history changes what users see,
+        self.nested = []                                    # and untracked files are judged from the disk alone
         self.scanning, self.stop_scan = False, False
         self.scan_msg, self.scan_started = "", 0.0
         self.found = []
@@ -714,6 +716,9 @@ class PurgeApp:
             checks.append((True, "Channel deletion is on", "EnableAPIChannelDeletion = true") if self.deletion_enabled else
                           (None, "Channel deletion is off", "Archived channels can be scanned but not deleted. Set "
                                                             "ServiceSettings.EnableAPIChannelDeletion = true and reconnect."))
+            self.post_deletion = core.post_deletion_ok(self.sess)
+            if self.post_deletion is not True:
+                checks.append((None, *core.POST_DELETION_OFF))
             self.storage_before = core.storage_usage(self.sess)
             checks.append((True, "Data directory found", f"{gb(self.storage_before)} in use"))
             self.server_name, self.server_state = self._profile_name(), "connected"
@@ -839,9 +844,13 @@ class PurgeApp:
 
         try:
             self.sess.errors.clear()
-            self.items = core.scan(self.sess, kinds, progress=progress, on_item=on_item)
+            found = core.scan(self.sess, kinds, progress=progress, on_item=on_item)
+            self.items = [it for it in found if not it.get("inside")]
+            self.nested = [it for it in found if it.get("inside")]  # go with their channel/DM unless it's kept
             self.scan_done_kinds = set(kinds)
             self.scan_msg = f"Dry run finished {time.strftime('%H:%M')}"
+            if self.sess.errors:
+                self.scan_msg += f" · {self.sess.errors[-1]}"
             self._build_rows()
             self.max_step = 2
         except Stopped:
@@ -865,12 +874,21 @@ class PurgeApp:
         for n, r in enumerate(rows, 1):
             for it in r:
                 it["plan"] = n
+        deleted_plan = next((r[0]["plan"] for r in rows if r[0]["kind"] == "deleted"), len(rows) + 1)
+        for it in self.nested:
+            it["plan"] = deleted_plan
         self.rows = rows
         self.selected = set(range(len(rows)))
         self.filter_kind, self.search, self.f_search.value = None, "", ""
 
     def _sel_items(self):
-        return [it for i in sorted(self.selected) for it in self.rows[i]]
+        sel = [it for i in sorted(self.selected) for it in self.rows[i]]
+        deleted_row = next((i for i, r in enumerate(self.rows) if r[0]["kind"] == "deleted"), None)
+        if deleted_row is None or deleted_row in self.selected:
+            # deleted messages inside a kept channel or DM still go, as part of the Deleted messages bin
+            kept = {r[0]["id"] for i, r in enumerate(self.rows) if i not in self.selected and r[0]["kind"] in ("channel", "dm")}
+            sel += core.collectable(self.nested, kept)
+        return sel
 
     def _review(self) -> ft.Control:
         found_bytes = sum(it["bytes"] for it in self.items)
@@ -886,7 +904,7 @@ class PurgeApp:
                 ft.Container(expand=True),
                 T(f"{len(sel):,} of {len(self.items):,} items · {sum(len(i['paths']) for i in sel):,} files", color=INK2)]),
             load_bar(segs),
-            legend([(KIND[k][1], None, legend_name(k), f"{count_of(by_kind[k]):,}", gb(sum(i["bytes"] for i in by_kind[k])))
+            legend([(KIND[k][1], None, CHIP_LABEL[k], f"{count_of(by_kind[k]):,}", gb(sum(i["bytes"] for i in by_kind[k])))
                     for k in KIND if k not in core.TIDY and any(i["kind"] == k for i in self.items)] + db_legend(sel)
                    + ([(None, HATCH, "Kept", len(kept), gb(kept_bytes))] if kept else []))]),
             padding=ft.Padding.only(left=22, right=22, top=18, bottom=16))
@@ -967,11 +985,14 @@ class PurgeApp:
         if not sel:
             return
         size_str = gb(sum(i["bytes"] for i in sel))
-        blocked = self.deletion_enabled is not True and any(i["kind"] == "channel" for i in sel)
+        no_channels = self.deletion_enabled is not True and any(i["kind"] == "channel" for i in sel)
+        no_posts = getattr(self, "post_deletion", True) is not True and any(i["kind"] in ("dm", "deleted") for i in sel)
+        blocked = no_channels or no_posts
         lines = []
         tidy = [i for i in sel if i["kind"] in core.TIDY]
-        groups = [(k, [i for i in sel if i["kind"] == k], None) for k in KIND if k not in core.TIDY] +                  ([(tidy[0]["kind"], tidy, f"{count_of(tidy):,} database rows")]
-                  if tidy else [])
+        groups = [(k, [i for i in sel if i["kind"] == k], None) for k in KIND if k not in core.TIDY]
+        if tidy:
+            groups.append((tidy[0]["kind"], tidy, f"{count_of(tidy):,} database rows"))
         for k, its, text in groups:
             if its:
                 size = f"≈ {gb(sum(i['db_bytes'] for i in its))} after VACUUM" if k in core.TIDY else gb(sum(i["bytes"] for i in its))
@@ -1002,8 +1023,10 @@ class PurgeApp:
             self._start_collect(sel)
 
         typed.on_change, confirm.on_click = on_type, do_delete
-        warn = [self._check_row(None, "Channel deletion is off on the server",
-                                "Untick archived channels, or set EnableAPIChannelDeletion = true and reconnect.")] if blocked else []
+        warn = ([self._check_row(None, "Channel deletion is off on the server",
+                                 "Untick archived channels, or set EnableAPIChannelDeletion = true and reconnect.")] if no_channels else []) + \
+               ([self._check_row(None, core.POST_DELETION_OFF[0],
+                                 "Untick DMs and deleted messages, or set EnableAPIPostDeletion = true and reconnect.")] if no_posts else [])
         self.page.show_dialog(ft.AlertDialog(
             modal=True, bgcolor=SURF, barrier_color=ft.Colors.with_opacity(0.46, C.SCRIM),
             shape=ft.RoundedRectangleBorder(radius=22), content_padding=ft.Padding.only(left=28, right=28, top=26, bottom=8),
@@ -1059,7 +1082,7 @@ class PurgeApp:
             if run_vacuum:
                 self.current = "vacuum"
                 self.paint()
-                core.vacuum(self.sess)
+                core.vacuum(self.sess, core.vacuum_tables(ordered))
                 self.vacuum_ran = True
             self.storage_after = core.storage_usage(self.sess)
         except Exception as ex:
@@ -1088,7 +1111,7 @@ class PurgeApp:
                                                    (max(0, failed_b) / kb, None, XHATCH),
                                                    (max(0, 1 - (freed + max(0, skipped_b) + max(0, failed_b)) / kb), None, None)]))
             done_n = sum(self.route_status[p]["deleted"] for p in plans)
-            entries.append((KIND[k][1], None, legend_name(k),
+            entries.append((KIND[k][1], None, CHIP_LABEL[k],
                             f"{done_n:,}" + ("" if self.result else f" of {len(its):,}"), gb(freed) if self.result else ""))
         tidy_plans = sorted({i["plan"] for i in planned if i["kind"] in core.TIDY})
         if tidy_plans:
@@ -1188,12 +1211,14 @@ class PurgeApp:
                 happened = ft.Row([ft.Icon(ft.Icons.CANCEL_OUTLINED if st["status"] == "failed" else ft.Icons.SKIP_NEXT_ROUNDED, size=18, color=INK),
                                    ft.Text(spans=[ft.TextSpan(word, ft.TextStyle(weight=ft.FontWeight.W_700)),
                                                   ft.TextSpan(f": {what}")], color=INK, size=14, max_lines=1,
-                                           overflow=ft.TextOverflow.ELLIPSIS, width=270)], spacing=6)
+                                           overflow=ft.TextOverflow.ELLIPSIS, width=240)], spacing=6)
                 todo = what_to_do(st["status"], st["errors"])
             else:
                 happened, todo = self._status_cell(r[0]["plan"]), "–"
             rows.append(ft.DataRow(cells=[ft.DataCell(T(f"#{r[0]['plan']:03d}", 12, ft.FontWeight.W_600, INK3)),
-                                          ft.DataCell(bin_label(r[0]["kind"], name)), ft.DataCell(happened),
+                                          ft.DataCell(ft.Row([chip(r[0]["kind"]), ft.Container(  # long names ellipsize, never overlap
+                                              T(name, 13, color=INK, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS), expand=True)],
+                                              spacing=8, width=210)), ft.DataCell(happened),
                                           ft.DataCell(T(todo, 13, color=INK2))]))
         filters = ft.Row(spacing=8, controls=[
             filter_chip(f"Problems {len(problems)}", self.results_filter == "problems", lambda e: self._set_results_filter("problems")),
@@ -1234,7 +1259,7 @@ class PurgeApp:
 
         def worker():
             n = len(self.sess.errors)
-            core.vacuum(self.sess)
+            core.vacuum(self.sess, core.vacuum_tables([it for row in self.route for it in row]))
             self.vacuum_ran = len(self.sess.errors) == n
             self.storage_after = core.storage_usage(self.sess)
             self.paint()
@@ -1243,9 +1268,9 @@ class PurgeApp:
         self.page.show_dialog(ft.AlertDialog(
             modal=True, bgcolor=SURF, shape=ft.RoundedRectangleBorder(radius=22),
             title=T("Run VACUUM FULL now?", 22, ft.FontWeight.W_800, INK),
-            content=T("It rewrites FileInfo, Posts and the other tables Binday cleans, and locks each until it finishes. "
-                      "Mattermost can't show messages or files from a locked table, so only do this in a maintenance window.",
-                      color=INK2, width=440),
+            content=T(f"It rewrites {', '.join(core.vacuum_tables([it for row in self.route for it in row])) or 'nothing'} "
+                      "(the tables this run deleted from) and locks each until it finishes. Mattermost can't show messages or "
+                      "files from a locked table, so only do this in a maintenance window.", color=INK2, width=440),
             actions=[btn("Cancel", None, lambda ev: self.page.pop_dialog(), "text"),
                      btn("Run VACUUM FULL", ft.Icons.COMPRESS_ROUNDED, run)]))
 

@@ -20,7 +20,9 @@ It prints a report of every item it would remove, with file counts and sizes, an
 
 ## Delete
 
-Add `--execute` once the report looks right. Add `--vacuum` to shrink the database file afterwards. It locks each table Binday cleaned while it runs, so use a maintenance window.
+Add `--execute` once the report looks right. Add `--vacuum` to shrink the database file afterwards. It rewrites only the tables the run deleted from and locks each while it runs, so use a maintenance window.
+
+`--purge-deactivated-users` and `--purge-deleted-posts` need `ServiceSettings.EnableAPIPostDeletion = true` unless `mmctl` runs in local mode; `--execute` stops before deleting anything if it's off.
 
 ```bash
 python app.py ... --purge-archived-channels --purge-deactivated-users --purge-db-orphans --vacuum --execute
@@ -44,13 +46,13 @@ The exit code is 1 if anything failed; details are in `binday.log` in the curren
 | `--purge-deactivated-users` | Empty DMs with deactivated users: every message and file goes, the empty conversation stays. |
 | `--purge-deleted-posts` | Permanently delete messages people deleted (Mattermost only hides them) and their files. |
 | `--purge-db-orphans` | Delete files whose message no longer exists, or that an edit removed and no version of the message still uses, and their `FileInfo` rows. |
-| `--purge-abandoned-uploads` | Delete uploads that never finished (older than a day) and their `UploadSessions` rows. |
-| `--purge-untracked-files` | Delete files in the dated attachment folders that no database row points to (untouched for a day). |
+| `--purge-abandoned-uploads` | Delete uploads that never finished (untouched for a week) and their `UploadSessions` rows. |
+| `--purge-untracked-files` | Delete files in the dated attachment folders that no database row points to (untouched for a day). Refuses if most files look untracked. |
 | `--purge-deleted-emoji` | Delete the images Mattermost keeps (`image_deleted`) after a custom emoji is deleted. |
 | `--tidy-edit-history` | Delete earlier versions of edited messages. Users lose "Show edit history" and restore for them. |
 | `--tidy-jobs` | Delete finished job records older than 30 days (the same query as Mattermost's own, off-by-default, cleanup). |
 | `--tidy-link-previews` | Delete the link-preview cache for messages older than 30 days; Mattermost fetches a preview again when one is viewed. |
-| `--vacuum` | Run `VACUUM FULL` on the tables Binday deletes from, after deleting (only with `--execute`). |
+| `--vacuum` | Run `VACUUM FULL` on the tables this run deleted from (only with `--execute`). |
 | `--execute` | Actually delete. Without it, nothing changes. |
 | `--limit N` | Stop after N items (for trying it on a small batch). |
 

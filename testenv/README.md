@@ -37,13 +37,15 @@ App settings: SSH login `root@127.0.0.1:2222`, SSH key file `<repo>\testenv\.key
 CLI (Git Bash needs `MSYS_NO_PATHCONV=1`, or it rewrites `/opt/...` into a Windows path):
 
 ```bash
-cd testenv && MSYS_NO_PATHCONV=1 ../.venv/Scripts/python ../app.py --ssh root@127.0.0.1:2222 --ssh-key .keys/id_ed25519 --db-via-ssh --pg-dsn "host=postgres port=5432 dbname=mattermost user=mmuser password=$(grep POSTGRES_PASSWORD .env | cut -d= -f2)" --remote-data-dir /opt/mattermost/data --purge-archived-channels --purge-deactivated-users --purge-db-orphans
+cd testenv && MSYS_NO_PATHCONV=1 ../.venv/Scripts/python ../app.py --ssh root@127.0.0.1:2222 --ssh-key .keys/id_ed25519 --db-via-ssh --pg-dsn "host=postgres port=5432 dbname=mattermost user=mmuser password=$(grep POSTGRES_PASSWORD .env | cut -d= -f2)" --remote-data-dir /opt/mattermost/data --purge-archived-channels --purge-deactivated-users --purge-db-orphans --purge-deleted-posts --purge-abandoned-uploads --purge-untracked-files --purge-deleted-emoji --tidy-edit-history --tidy-jobs --tidy-link-previews
 ```
+
+Add `--execute` (and `--vacuum`) to delete; `verify.py --post` then expects every bin collected.
 
 ## What the seed creates
 
-- **Purge targets:** archived channels `old-project` (eng, files), `payroll-2023` (eng, files) and `empty-archive` (ops, no files); DMs with deactivated users bob and carol (3 conversations); 4 orphaned files (their posts were deleted straight from the database).
-- **Must survive:** active channel `keep-me`, the DM with active user dave, and `draft-upload.png`, an upload never attached to a post.
+- **Purge targets:** archived channels `old-project` (eng, files), `payroll-2023` (eng, files) and `empty-archive` (ops, no files); DMs with deactivated users bob and carol (3 conversations); 4 orphaned files (their posts were deleted straight from the database). A deleted message that was edited first (row, files and edit history), a thread with a reply file in the carol DM, an upload session abandoned 8 days ago, an untracked file in `20200101/` dated 2020, a deleted custom emoji's `image_deleted`, an old finished job and an old link preview.
+- **Must survive:** active channel `keep-me`, the DM with active user dave, `draft-upload.png` (an upload never attached to a post), both files of a post whose edit dropped one (restoring the older version brings it back), an upload started just now, a fresh untracked file, an old job still `in_progress`, and a recent link preview.
 
 ## Notes
 

@@ -1,0 +1,29 @@
+name: Feature request
+description: Suggest something Binday should find, show or do.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Binday deletes data for good, so a few things stay as they are on purpose: a dry run, a review and the typed DELETE confirmation before anything is deleted, and no telemetry.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What do you want to do?
+      description: Describe the problem or the need, not only the solution. What is taking space on your server?
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How could Binday help?
+  - type: input
+    id: setup
+    attributes:
+      label: Your Mattermost setup
+      placeholder: Team Edition 12.1, Docker, PostgreSQL, about 200 users
+  - type: textarea
+    id: other
+    attributes:
+      label: Anything else?
+      description: Screenshots, other tools that do this, or links.

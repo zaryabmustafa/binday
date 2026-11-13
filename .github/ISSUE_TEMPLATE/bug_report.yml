@@ -1,0 +1,63 @@
+name: Bug report
+description: Something in Binday doesn't work, or it found or deleted the wrong thing.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        If Binday deleted something it shouldn't have, say so in the title. Remove server names, user names and paths you don't want public from anything you paste.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you expect, and what did you see instead?
+    validations:
+      required: true
+  - type: dropdown
+    id: step
+    attributes:
+      label: Which step?
+      options:
+        - Connect
+        - Scan
+        - Review
+        - Collect / Results
+        - Command line (app.py)
+        - Installing or starting the app
+    validations:
+      required: true
+  - type: textarea
+    id: log
+    attributes:
+      label: What do the Results screen or binday.log say?
+      description: The desktop app logs to ~/.binday/binday.log; the command line to ./binday.log.
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: Binday version
+      description: The release you downloaded, or the commit if you run it from source.
+      placeholder: v1.0.0
+    validations:
+      required: true
+  - type: input
+    id: mattermost
+    attributes:
+      label: Mattermost version and edition
+      placeholder: 12.1.0 Team Edition, Docker, PostgreSQL 17
+    validations:
+      required: true
+  - type: input
+    id: os
+    attributes:
+      label: Your computer
+      placeholder: Windows 11 24H2 / macOS 15 / Ubuntu 24.04
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. ...
+        2. ...

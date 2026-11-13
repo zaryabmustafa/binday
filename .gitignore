@@ -206,3 +206,15 @@ cython_debug/
 marimo/_static/
 marimo/_lsp/
 __marimo__/
+
+# local test environment secrets (testenv/setup.sh)
+testenv/.env
+testenv/.keys/
+testenv/.seed.json
+
+# flet build logs
+build-*.log
+
+# design-tool working files (decision sketches, review captures)
+.impeccable/mocks/
+.impeccable/review/

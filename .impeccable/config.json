@@ -1,0 +1,134 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "roboto",
+        "files": [
+          ".impeccable/mocks/decision/canon.html"
+        ],
+        "createdAt": "2026-11-13T17:36:32.903Z",
+        "reason": "Claude: canon card deliberately depicts the stock Material 3 category standard, whose default face is Roboto"
+      },
+      {
+        "rule": "cramped-padding",
+        "value": "*",
+        "files": [
+          "mockup/index.html"
+        ],
+        "createdAt": "2026-11-13T17:49:28.019Z",
+        "reason": "Claude: remaining hits are icon-only tiles (bin chips, mark, warn icon, step numerals) centred in fixed squares and the mockup's window frame; text fields were fixed to real padding"
+      },
+      {
+        "rule": "repeating-stripes-gradient",
+        "value": "*",
+        "files": [
+          "mockup/index.html"
+        ],
+        "createdAt": "2026-11-13T17:49:28.064Z",
+        "reason": "Claude: hatch and cross-hatch encode not-collected (kept/skipped) and failed state in the load bar so state is not conveyed by colour alone (PRODUCT.md accessibility)"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "*",
+        "files": [
+          ".impeccable/mocks/decision/model-pick.html"
+        ],
+        "createdAt": "2026-11-13T17:56:36.148Z",
+        "reason": "Claude: unchosen decision-round sketch for an alternate direction; its fonts belong to that direction, not the shipped system"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "*",
+        "files": [
+          ".impeccable/mocks/decision/canon.html"
+        ],
+        "createdAt": "2026-11-13T17:56:36.186Z",
+        "reason": "Claude: unchosen decision-round sketch of the stock Material standard (Roboto by design)"
+      },
+      {
+        "rule": "design-system-color",
+        "value": "#007",
+        "files": [
+          "mockup/index.html"
+        ],
+        "createdAt": "2026-11-13T17:56:57.657Z",
+        "reason": "Claude: false positive, the plan number text #007 parsed as a hex colour"
+      },
+      {
+        "rule": "design-system-radius",
+        "value": "8px",
+        "files": [
+          "mockup/index.html"
+        ],
+        "createdAt": "2026-11-13T17:56:57.704Z",
+        "reason": "Claude: presentation deck nav links around the mockup, not part of the app"
+      },
+      {
+        "rule": "design-system-font",
+        "value": "sans\",system-ui,sans-serif",
+        "files": [
+          "mockup/index.html"
+        ],
+        "createdAt": "2026-11-13T17:57:08.000Z",
+        "reason": "Claude: parser split of the Public Sans stack, which DESIGN.md declares"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "16px",
+        "files": [
+          "mockup/index.html"
+        ],
+        "createdAt": "2026-11-13T17:57:08.000Z",
+        "reason": "Claude: Material Symbols glyph sizes (icon optical sizes), not text; the icon role is in DESIGN.md typography"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "17px",
+        "files": [
+          "mockup/index.html"
+        ],
+        "createdAt": "2026-11-13T17:57:08.000Z",
+        "reason": "Claude: Material Symbols glyph sizes (icon optical sizes), not text; the icon role is in DESIGN.md typography"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "18px",
+        "files": [
+          "mockup/index.html"
+        ],
+        "createdAt": "2026-11-13T17:57:08.000Z",
+        "reason": "Claude: Material Symbols glyph sizes (icon optical sizes), not text; the icon role is in DESIGN.md typography"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "19px",
+        "files": [
+          "mockup/index.html"
+        ],
+        "createdAt": "2026-11-13T17:57:08.000Z",
+        "reason": "Claude: Material Symbols glyph sizes (icon optical sizes), not text; the icon role is in DESIGN.md typography"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "21px",
+        "files": [
+          "mockup/index.html"
+        ],
+        "createdAt": "2026-11-13T17:57:08.000Z",
+        "reason": "Claude: Material Symbols glyph sizes (icon optical sizes), not text; the icon role is in DESIGN.md typography"
+      },
+      {
+        "rule": "design-system-font-size",
+        "value": "24px",
+        "files": [
+          "mockup/index.html"
+        ],
+        "createdAt": "2026-11-13T17:57:08.000Z",
+        "reason": "Claude: Material Symbols glyph sizes (icon optical sizes), not text; the icon role is in DESIGN.md typography"
+      }
+    ]
+  }
+}

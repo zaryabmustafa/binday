@@ -1,0 +1,17 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "purge-demo-web",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
+      "runtimeArgs": ["gui.py", "--demo", "--web"],
+      "port": 8550
+    },
+    {
+      "name": "purge-web",
+      "runtimeExecutable": ".venv/Scripts/python.exe",
+      "runtimeArgs": ["gui.py", "--web"],
+      "port": 8550
+    }
+  ]
+}

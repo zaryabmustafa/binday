@@ -47,9 +47,22 @@ On Windows you also need:
 - **Developer Mode** on (Settings → System → For developers), because Flutter needs symbolic links.
 - No spaces in the Flutter SDK or `PUB_CACHE` paths. If your user folder has a space, put Flutter on `PATH` from somewhere like `D:\tools\flutter` and set `PUB_CACHE=D:\tools\pub-cache`.
 
+### Portable Windows exe
+
+The single-file `Binday-portable.exe` is built with PyInstaller through `flet pack`, so it needs no Flutter or Visual Studio:
+
+```bash
+.venv/Scripts/python -m pip install pyinstaller
+```
+```bash
+.venv/Scripts/flet pack gui.py -y -n Binday-portable -i assets/icon.ico --add-data "assets:assets" --product-name Binday
+```
+
+The exe lands in `dist/`.
+
 ## Release
 
-[`.github/workflows/build.yml`](../.github/workflows/build.yml) builds Windows, macOS and Linux. Run it from the Actions tab for test builds, or push a tag such as `v1.2.0` to build all three and publish a GitHub Release with `Binday-windows-x64.zip`, `Binday-macos.zip` and `Binday-linux-x64.tar.gz`. Bump `version` in `pyproject.toml` first.
+[`.github/workflows/build.yml`](../.github/workflows/build.yml) builds Windows, macOS and Linux. Run it from the Actions tab for test builds, or push a tag such as `v1.2.0` to build all three and publish a GitHub Release with `Binday-windows-x64.zip`, `Binday-portable.exe`, `Binday-macos.zip` and `Binday-linux-x64.tar.gz`. Bump `version` in `pyproject.toml` first.
 
 ## Brand assets
 

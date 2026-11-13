@@ -87,7 +87,7 @@ Download for your system from the [latest release](https://github.com/zaryabmust
 
 1. Open Binday and fill in **Server** (SSH login, data directory, Docker container) and **Database**.
 2. Leave **Go through the SSH connection** on, so the database doesn't need to be reachable from your computer.
-3. **Connect**, then **Save** the profile. Passwords go into your OS keychain, never into a file.
+3. Use **Test** on any section to check just that part (SSH and the data directory, the database, or the mmctl login), then **Connect** and **Save** the profile. Passwords go into your OS keychain, never into a file.
 
 Want to look around first? Run it from source with `python gui.py --demo`. It uses made-up data and connects to nothing.
 

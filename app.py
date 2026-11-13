@@ -104,18 +104,24 @@ class Settings:
 
 
 class Session:
-    def __init__(self, settings: Settings):
+    def __init__(self, settings: Settings, parts=("ssh", "db", "mmctl")):
+        """Connect the given parts. A DB reached through SSH connects SSH too."""
         self.s = settings
         self.errors: List[str] = []
         self.ssh = self.sftp = self.conn = self.cur = self._tunnel = None
         self._cols: Dict[str, List[str]] = {}
         try:
-            self._connect()
+            if "ssh" in parts or "mmctl" in parts or ("db" in parts and settings.db_via_ssh):
+                self._connect_ssh()
+            if "db" in parts:
+                self._connect_db()
+            if "mmctl" in parts and settings.mm_server and settings.mm_token:
+                self.login_mmctl(allow_fail=True)
         except Exception:
             self.close()
             raise
 
-    def _connect(self):
+    def _connect_ssh(self):
         s = self.s
         user, host = ("root", s.ssh)
         if "@" in s.ssh:
@@ -131,6 +137,8 @@ class Session:
                          key_filename=s.ssh_key or None, timeout=15)
         self.sftp = self.ssh.open_sftp()
 
+    def _connect_db(self):
+        s = self.s
         pg = {k: v for k, v in s.pg.items() if v not in (None, "")}
         if s.db_via_ssh:
             self._tunnel = start_tunnel(self.ssh.get_transport(), pg.get("host", "127.0.0.1"),
@@ -142,9 +150,11 @@ class Session:
         self.cur = self.conn.cursor()
         self.schema, self.t = detect_mm_tables(self.cur)
 
-        if s.mm_server and s.mm_token:
-            self.mmctl("auth", "login", "--name", s.mm_profile, "--server", s.mm_server,
-                       "--access-token", s.mm_token, allow_fail=True)
+    def login_mmctl(self, allow_fail=False):
+        s = self.s
+        # mmctl takes the server URL as a positional argument (there is no --server flag)
+        return self.mmctl("auth", "login", s.mm_server, "--name", s.mm_profile,
+                          "--access-token", s.mm_token, allow_fail=allow_fail)
 
     # -- helpers
     def error(self, msg: str) -> None:
@@ -200,6 +210,96 @@ def detect_mm_tables(cur):
         raise RuntimeError("Could not find Mattermost tables (FileInfo, Posts, Channels, Users).")
     schema = "public" if "public" in candidates else candidates[0]
     return schema, by_schema[schema]
+
+
+# --------------------------------------------------------------------------- connection tests
+# Each returns check rows (ok, title, detail): ok is True, False (failed) or None (works, with a warning).
+
+def _short(e: Exception) -> str:
+    msg = str(e).strip() or type(e).__name__
+    if "FATAL:" in msg:  # PostgreSQL puts the reason after FATAL:, behind a long "connection to ... failed" prefix
+        return msg.split("FATAL:", 1)[1].strip().splitlines()[0]
+    lines = [l.strip() for l in msg.splitlines() if l.strip()]
+    for l in lines:  # prefer mmctl's / the remote command's own message over the command line
+        if l.startswith(("Error:", "STDERR:", "FATAL:", "*")):
+            return l.split(":", 1)[-1].strip() if l.startswith("STDERR:") else l
+    return lines[0]
+
+
+def test_server(s: Settings) -> List[tuple]:
+    """SSH login, data directory, Docker container and mmctl inside it."""
+    try:
+        sess = Session(s, parts=("ssh",))
+    except Exception as e:
+        return [(False, "SSH failed", _short(e))]
+    rows = [(True, "SSH connected", f"{s.ssh} · {'password' if s.ssh_password else 'key file' if s.ssh_key else 'key from agent'}")]
+    try:
+        found = sess.run(["sh", "-c", f"test -d {shlex.quote(s.remote_data_dir)} && echo yes"], allow_fail=True) == "yes"
+        rows.append((True, "Data directory found", f"{format_bytes(storage_usage(sess))} in use") if found else
+                    (False, "Data directory not found", s.remote_data_dir))
+        running = sess.run(["docker", "inspect", "-f", "{{.State.Running}}", s.container], allow_fail=True)
+        if running != "true":
+            rows.append((False, f"Container “{s.container}” isn't running",
+                         "Check the name with `docker ps` on the server" if not running else running))
+        else:
+            rows.append((True, "Docker container running", s.container))
+            version = sess.mmctl("version", allow_fail=True)
+            vline = next((l.strip() for l in version.splitlines() if "Version" in l), version.splitlines()[0] if version else "")
+            rows.append((True, "mmctl found", vline[:80]) if version else
+                        (False, "mmctl not found", f"No mmctl inside “{s.container}”"))
+    except Exception as e:
+        rows.append((False, "Server check failed", _short(e)))
+    finally:
+        sess.close()
+    return rows
+
+
+def test_database(s: Settings) -> List[tuple]:
+    """PostgreSQL connection (through SSH when set) and that it holds Mattermost's tables."""
+    try:
+        sess = Session(s, parts=("db",))
+    except Exception as e:
+        where = " through SSH" if s.db_via_ssh else ""
+        return [(False, f"Couldn't reach the database{where}", _short(e))]
+    try:
+        sess.cur.execute(f"SELECT count(*) FROM {sess.q('users')}")
+        users = sess.cur.fetchone()[0]
+        return [(True, "Database reachable", f"{s.pg.get('dbname')} · schema {sess.schema}" + (" · via SSH" if s.db_via_ssh else "")),
+                (True, "Mattermost tables found", f"{users:,} users")]
+    except Exception as e:
+        return [(False, "Database check failed", _short(e))]
+    finally:
+        sess.close()
+
+
+def test_mmctl(s: Settings) -> List[tuple]:
+    """Log mmctl in with the URL and token (if given), then make a real call."""
+    try:
+        sess = Session(s, parts=("ssh",))
+    except Exception as e:
+        return [(False, "SSH failed", _short(e))]
+    rows = []
+    try:
+        if s.mm_server and s.mm_token:
+            try:
+                sess.login_mmctl()
+                rows.append((True, "mmctl logged in", s.mm_server))
+            except Exception as e:
+                return [(False, "mmctl login failed", _short(e))]
+        try:
+            teams = mmctl_team_names(sess)
+        except Exception as e:
+            hint = "Enter the server URL and an access token" if not (s.mm_server and s.mm_token) else _short(e)
+            return rows + [(False, "mmctl can't talk to Mattermost", hint)]
+        if not rows:
+            rows.append((True, "No login needed", "mmctl in the container already works"))
+        rows.append((True, "mmctl works", f"{len(teams)} teams"))
+        enabled = channel_deletion_enabled(sess)
+        rows.append((True, "Channel deletion is on", "EnableAPIChannelDeletion = true") if enabled else
+                    (None, "Channel deletion is off", "Archived channels can be scanned but not deleted"))
+    finally:
+        sess.close()
+    return rows
 
 
 # --------------------------------------------------------------------------- mmctl queries

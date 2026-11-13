@@ -296,6 +296,7 @@ class PurgeApp:
         self._last_paint = 0.0
         # connect
         self.checks, self.connecting = [], False
+        self.tests, self.testing = {}, set()  # per-section Test results: {"server"|"database"|"mmctl": rows}
         self.f_profile = ft.Dropdown(label="Profile", width=230, dense=True, border=borders(),
                                      leading_icon=ft.Icons.BOOKMARK_BORDER_ROUNDED,
                                      on_select=lambda e: self._load_profile(self.f_profile.value))
@@ -394,10 +395,11 @@ class PurgeApp:
     # ----------------------------------------------------------------- 1. Connect
     def _connect(self) -> ft.Control:
         server = panel(ft.Column(spacing=18, horizontal_alignment=ft.CrossAxisAlignment.STRETCH, controls=[
-            section_title(ft.Icons.DNS_OUTLINED, "Server"), self.f_ssh, self.f_ssh_pw, self.f_ssh_key, self.f_data, self.f_container]),
+            self._section_head(ft.Icons.DNS_OUTLINED, "Server", "server"), self.f_ssh, self.f_ssh_pw, self.f_ssh_key,
+            self.f_data, self.f_container]),
             padding=20, expand=True)
         database = panel(ft.Column(spacing=18, horizontal_alignment=ft.CrossAxisAlignment.STRETCH, controls=[
-            section_title(ft.Icons.STORAGE_ROUNDED, "Database"),
+            self._section_head(ft.Icons.STORAGE_ROUNDED, "Database", "database"),
             ft.Row([self.sw_tunnel, ft.Column([T("Go through the SSH connection", weight=ft.FontWeight.W_600, color=INK),
                                                T("The database doesn't need to be reachable from this computer", 12, color=INK2)],
                                               spacing=1, expand=True)], spacing=12),
@@ -406,13 +408,24 @@ class PurgeApp:
             padding=20, expand=True)
         mmctl = panel(ft.Column(spacing=16, horizontal_alignment=ft.CrossAxisAlignment.STRETCH, controls=[
             ft.Row([section_title(ft.Icons.TERMINAL_ROUNDED, "mmctl login"),
-                    T("Optional. Only needed if mmctl inside the container isn't logged in already.", 13, color=INK2)], spacing=12),
+                    ft.Container(T("Optional. Only needed if mmctl inside the container isn't logged in already.", 13, color=INK2,
+                                   max_lines=1, overflow=ft.TextOverflow.ELLIPSIS), expand=True),
+                    self._test_button("mmctl")], spacing=12),
             ft.Row([self.f_mm_server, self.f_mm_token], spacing=12)]), padding=20)
 
-        if self.checks:
-            check_rows = [self._check_row(*c) for c in self.checks]
-        else:
-            check_rows = [T("Fill in the server and database, then connect. Nothing is changed on the server.", 13, color=INK2)]
+        check_rows = []
+        for title, rows in self._status_groups():
+            if rows == "testing":
+                check_rows.append(ft.Container(ft.Row([spinner(18, PRIMARY), T(f"Testing {title.lower()}…", color=INK2)], spacing=12),
+                                               padding=ft.Padding.symmetric(vertical=11), border=ft.Border.only(bottom=ft.BorderSide(1, LINE2))))
+            elif title:  # a section test: one summary row, details on hover
+                ok, head, detail, hover = self._summary(title, rows)
+                check_rows.append(ft.Container(self._check_row(ok, head, detail), tooltip=hover))
+            else:
+                check_rows += [self._check_row(*c) for c in rows]
+        if not check_rows:
+            check_rows = [T("Fill in the server and database, then connect, or test each section on its own. "
+                            "Nothing is changed on the server.", 13, color=INK2)]
         if self.connecting:
             check_rows = [ft.Row([spinner(18, PRIMARY), T("Connecting…", color=INK2)])]
         connected = self.max_step >= 1 and not self.connecting
@@ -426,7 +439,7 @@ class PurgeApp:
             body = [ft.Row([ft.Column([forms, mmctl], spacing=GAP, expand=True), status], spacing=GAP,
                            vertical_alignment=stretch, intrinsic_height=True)]
         else:  # narrow: the connection result rides above the form as a strip of chips, so it's never below the fold
-            body = ([self._check_strip()] if (self.checks or self.connecting) else []) + [forms, mmctl]
+            body = ([self._check_strip()] if (self.checks or self.connecting or self.tests or self.testing) else []) + [forms, mmctl]
         head = title_row("Connect to your server", "Works over SSH. Nothing on the server changes until you confirm a deletion.",
                          [self.f_profile, btn("Save", ft.Icons.SAVE_OUTLINED, self._save_profile, "outline", small=True),
                           btn("New", ft.Icons.ADD_ROUNDED, self._new_profile, "text", small=True)])
@@ -437,13 +450,81 @@ class PurgeApp:
                                  self._on_connect, "outline" if connected else "fill", disabled=self.connecting),
                              *([btn("Continue", ft.Icons.ARROW_FORWARD_ROUNDED, lambda e: self.go(1))] if connected else [])])
 
+    # ---- per-section Test buttons
+    def _section_head(self, icon, title, key) -> ft.Control:
+        return ft.Row([section_title(icon, title), ft.Container(expand=True), self._test_button(key)],
+                      vertical_alignment=ft.CrossAxisAlignment.CENTER)
+
+    def _test_button(self, key) -> ft.Control:
+        if key in self.testing:
+            return ft.Row([spinner(16, PRIMARY), T("Testing…", 13, ft.FontWeight.W_600, INK2)], spacing=8, tight=True)
+        return btn("Test", ft.Icons.PLAY_CIRCLE_OUTLINE_ROUNDED, lambda e, k=key: self._on_test(k), "outline", small=True,
+                   disabled=self.connecting)
+
+    TEST_NAMES = {"server": "Server", "database": "Database", "mmctl": "mmctl login"}
+
+    @staticmethod
+    def _summary(name, rows):
+        """One check row for a section test: all passed, or the first problem; every row's detail on hover."""
+        bad = [r for r in rows if r[0] is False] or [r for r in rows if r[0] is None]
+        hover = chr(10).join(f"{'✓' if ok else '!' if ok is None else '✗'} {t}: {d}" for ok, t, d in rows)
+        if not bad:
+            return True, f"{name}: all {len(rows)} checks passed", ", ".join(t for _, t, _ in rows), hover
+        ok, title, detail = bad[0]
+        more = f" (+{len(bad) - 1} more)" if len(bad) > 1 else ""
+        return ok, f"{name}: {title}{more}", detail, hover
+
+    def _status_groups(self) -> list:
+        """(group title or None, rows) for the Connection panel: the full connect, then each section's own test."""
+        groups = [(None, self.checks)] if self.checks else []
+        for key, name in self.TEST_NAMES.items():
+            if key in self.testing:
+                groups.append((name, "testing"))
+            elif self.tests.get(key):
+                groups.append((name, self.tests[key]))
+        return groups
+
+    def _on_test(self, key):
+        form = self._form()
+        need = {"server": ("ssh", "data_dir"), "database": ("db_name", "db_user") + (("ssh",) if form["db_via_ssh"] else ()),
+                "mmctl": ("ssh",)}[key]
+        fields = {"ssh": self.f_ssh, "data_dir": self.f_data, "db_name": self.f_db_name, "db_user": self.f_db_user}
+        missing = [k for k in need if not form[k]]
+        for k in need:
+            fields[k].error = "Required" if k in missing else None
+        if missing:
+            self.paint()
+            return
+        self.testing.add(key)
+        self.tests.pop(key, None)
+        self.paint()
+        self.page.run_thread(self._test_worker, key, form)
+
+    def _test_worker(self, key, form):
+        fn = {"server": core.test_server, "database": core.test_database, "mmctl": core.test_mmctl}[key]
+        try:
+            self.tests[key] = fn(self._settings(form))
+        except Exception as ex:
+            logging.exception("Test %s failed", key)
+            self.tests[key] = [(False, "Test failed", str(ex).splitlines()[0] if str(ex) else type(ex).__name__)]
+        self.testing.discard(key)
+        self.paint()
+
     def _check_strip(self) -> ft.Control:
         if self.connecting:
             chips = [(spinner(16, PRIMARY), "Connecting…", None)]
         else:
             icons = {True: (ft.Icons.CHECK_CIRCLE_ROUNDED, OK), False: (ft.Icons.CANCEL_OUTLINED, INK),
                      None: (ft.Icons.WARNING_AMBER_ROUNDED, INK)}
-            chips = [(ft.Icon(icons[ok][0], color=icons[ok][1], size=18), title, detail) for ok, title, detail in self.checks]
+            chips = []
+            for group, rows in self._status_groups():
+                if rows == "testing":
+                    chips.append((spinner(16, PRIMARY), f"Testing {group.lower()}…", None))
+                elif group:
+                    ok, head, _, hover = self._summary(group, rows)
+                    chips.append((ft.Icon(icons[ok][0], color=icons[ok][1], size=18), head, hover))
+                else:
+                    chips += [(ft.Icon(icons[ok][0], color=icons[ok][1], size=18), title, detail) for ok, title, detail in rows]
         return ft.Row(wrap=True, spacing=8, run_spacing=8, controls=[
             ft.Container(ft.Row([icon, T(title, 13, ft.FontWeight.W_600, INK)], spacing=8, tight=True), tooltip=detail,
                          padding=ft.Padding.symmetric(horizontal=12, vertical=8), border_radius=10, bgcolor=SURF,
@@ -519,20 +600,25 @@ class PurgeApp:
             self.paint()
             return
         self.connecting, self.checks, self.max_step = True, [], 0
+        self.tests.clear()
         self.paint()
         self.page.run_thread(self._connect_worker, form)
 
-    def _connect_worker(self, form):
-        if self.sess:
-            self.sess.close()
-            self.sess = None
-        settings = core.Settings(
+    @staticmethod
+    def _settings(form) -> "core.Settings":
+        return core.Settings(
             ssh=form["ssh"], ssh_password=form["ssh_password"], ssh_key=os.path.expanduser(form["ssh_key"]) if form["ssh_key"] else None,
             remote_data_dir=form["data_dir"],
             container=form["container"], db_via_ssh=form["db_via_ssh"],
             pg={"host": form["db_host"], "port": form["db_port"], "dbname": form["db_name"],
                 "user": form["db_user"], "password": form["db_password"]},
             mm_server=form["mm_server"] or None, mm_token=form["mm_token"] or None)
+
+    def _connect_worker(self, form):
+        if self.sess:
+            self.sess.close()
+            self.sess = None
+        settings = self._settings(form)
         checks = []
         try:
             self.sess = core.Session(settings)

@@ -20,7 +20,7 @@ Binday finds items from the database, never by scanning the disk blindly, so sys
 
 ## The four steps
 
-1. **Connect.** Checks SSH, the database, `mmctl`, whether channel deletion is enabled, and the data directory size.
+1. **Connect.** Checks SSH, the database, `mmctl`, whether channel deletion is enabled, and the data directory size. Each section also has its own **Test** button: Server (SSH login, data directory, Docker container, mmctl inside it), Database (connection and Mattermost's tables) and mmctl login (logs in with the URL and token, then makes a real call).
 2. **Scan (dry run).** Lists every item and measures its files on disk. Read-only.
 3. **Review.** Shows the space to reclaim split by bin, largest first. Untick anything you want to keep.
 4. **Collect.** You confirm by typing `DELETE`, then items are removed in plan order. Results list every skipped or failed item with the cause and what to do next.

@@ -1,0 +1,44 @@
+Starting... Mode: EXECUTE
+2026-11-14 04:42:31,418 [INFO] Connected (version 2.0, client OpenSSH_10.0)
+2026-11-14 04:42:31,478 [INFO] Authentication (publickey) successful!
+2026-11-14 04:42:31,520 [INFO] [chan 0] Opened sftp connection (server version 3)
+...................2026-11-14 04:42:32,404 [WARNING] Kept 20261113/teams/noteam/channels/uo1rutsnyfdw3xu468fpjko73c/users/kgptnf6mt385tmgigpk3rx7wqe/59zb34y6wfgr9k43eta87sirwe/old-project-0.png: another file record still uses it
+2026-11-14 04:42:32,404 [WARNING] Kept 20261113/teams/noteam/channels/uo1rutsnyfdw3xu468fpjko73c/users/kgptnf6mt385tmgigpk3rx7wqe/59zb34y6wfgr9k43eta87sirwe/old-project-0_preview.png: another file record still uses it
+2026-11-14 04:42:32,404 [WARNING] Kept 20261113/teams/noteam/channels/uo1rutsnyfdw3xu468fpjko73c/users/kgptnf6mt385tmgigpk3rx7wqe/59zb34y6wfgr9k43eta87sirwe/old-project-0_thumb.png: another file record still uses it
+2026-11-14 04:42:33,131 [WARNING] Kept 20261113/teams/noteam/channels/dk1utgj81fgh8brj1knqaudsqa/users/kgptnf6mt385tmgigpk3rx7wqe/pbabitdh57b8jkqf7aab71e9hy/orphan0-0.png: another file record still uses it
+2026-11-14 04:42:33,132 [WARNING] Kept 20261113/teams/noteam/channels/dk1utgj81fgh8brj1knqaudsqa/users/kgptnf6mt385tmgigpk3rx7wqe/pbabitdh57b8jkqf7aab71e9hy/orphan0-0_thumb.png: another file record still uses it
+2026-11-14 04:42:33,132 [WARNING] Kept 20261113/teams/noteam/channels/dk1utgj81fgh8brj1knqaudsqa/users/kgptnf6mt385tmgigpk3rx7wqe/pbabitdh57b8jkqf7aab71e9hy/orphan0-0_preview.png: another file record still uses it
+
+[Maintenance] Running VACUUM FULL on fileinfo, jobs, linkmetadata, posts, uploadsessions... (locks each table while it runs)
+
+Calculating total storage usage...
+2026-11-14 04:42:33,238 [INFO] [chan 0] sftp session closed.
+
+================================================================================
+ BINDAY REPORT (EXECUTE)
+================================================================================
+ITEM                                               | FILES    | SIZE      
+--------------------------------------------------------------------------------
+eng: old-project                                   | 8        | 1.67 MB   
+eng: payroll-2023                                  | 7        | 981.27 KB 
+ops: empty-archive                                 | 0        | 0.00 B    
+Deactivated user DM: DM bob & purgeadmin           | 7        | 981.15 KB 
+Deactivated user DM: DM bob & alice                | 4        | 662.57 KB 
+Deactivated user DM: DM carol & purgeadmin         | 7        | 826.92 KB 
+Deleted message: in Town Square                    | 4        | 662.54 KB 
+Orphaned file: orphan0-1.bin                       | 1        | 439.45 KB 
+Orphaned file: orphan0-0.png                       | 3        | 223.19 KB 
+Orphaned file: orphan1-1.bin                       | 1        | 439.45 KB 
+Orphaned file: orphan1-0.png                       | 3        | 223.12 KB 
+Abandoned upload: abandoned.bin                    | 1        | 5.05 MB   
+Untracked file: old.bin                            | 1        | 117.19 KB 
+Deleted emoji image: :seedemoji:                   | 1        | 12.78 KB  
+Edit history: 10 rows                              | -        | ~304.00 KB in DB
+Old job records: 1 rows                            | -        | ~64.00 KB in DB
+Link preview cache: 1 rows                         | -        | ~48.00 KB in DB
+--------------------------------------------------------------------------------
+RECLAIMED SPACE                                    |          | 11.73 MB  
+--------------------------------------------------------------------------------
+CURRENT TOTAL STORAGE USAGE                        |          | 14.99 MB  
+================================================================================
+

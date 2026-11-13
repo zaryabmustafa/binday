@@ -164,6 +164,9 @@ def main():
         call("POST", f"/uploads/{us['id']}", admin, raw=b"x" * 5_300_000, ctype="application/octet-stream")
         psql(f"UPDATE uploadsessions SET createat = {now - age} WHERE id = '{us['id']}'")
         uploads[name] = {"id": us["id"], "path": psql(f"SELECT path FROM uploadsessions WHERE id = '{us['id']}'")}
+        if age:  # Binday also wants the partial file idle for a week (sessions have no update time)
+            sh("docker", "exec", "mm-purge-test-server-1", "sh", "-c",
+               f"touch -d '@{(now - age) // 1000}' '/opt/mattermost/data/{uploads[name]['path']}'")
     seed["uploads"] = uploads
     # untracked files in a dated folder: one untouched for days (goes), one fresh (stays)
     sh("docker", "exec", "mm-purge-test-server-1", "sh", "-c",
@@ -204,6 +207,24 @@ def main():
     psql(f"INSERT INTO uploadsessions (id, type, createat, userid, channelid, filename, path, filesize, fileoffset) "
          f"SELECT '{seed['lingering_session']}', 'attachment', {now - 10 * day}, creatorid, '{seed['channels']['keep-me']['id']}', "
          f"name, path, size, size FROM fileinfo WHERE id = '{live}'")
+
+    # a disabled bot (as when its owner is deactivated): its DM with an active user is integration history, kept
+    mmctl("config", "set", "ServiceSettings.EnableBotAccountCreation", "true")
+    _, bot = call("POST", "/bots", admin, body={"username": "seedbot", "display_name": "Seed bot"})
+    dave = login("dave", users["dave"])
+    _, botdm = call("POST", "/channels/direct", dave, body=[ids["dave"], bot["user_id"]])
+    p = post_files(dave, botdm["id"], "to the bot", some_files(1, "botdm"))
+    call("POST", f"/bots/{bot['user_id']}/disable", admin)
+    seed["bot_dm"] = {"id": botdm["id"], "file_ids": p["file_ids"]}
+    seed["keep_files"] += p["file_ids"]
+    # a deleted message whose file a live copy still uses: Mattermost's own delete would remove the file, so it stays
+    sd = post_files(admin, town, "shared then deleted", some_files(1, "shareddel"))
+    copy = uuid.uuid4().hex[:26]
+    psql(f"INSERT INTO fileinfo SELECT (jsonb_populate_record(NULL::fileinfo, to_jsonb(f) || "
+         f"jsonb_build_object('id', '{copy}', 'postid', '{holder}'))).* FROM fileinfo f WHERE id = '{sd['file_ids'][0]}'")
+    call("DELETE", f"/posts/{sd['post_id']}", admin)
+    seed["shared_deleted"] = {"post_id": sd["post_id"], "copy": copy}
+    seed["keep_files"].append(copy)
 
     out.write_text(json.dumps(seed, indent=2))
     print(f"Seeded. Users/passwords and ids written to {out}.")

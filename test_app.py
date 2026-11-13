@@ -84,6 +84,8 @@ class FakeSession:
         self.rowcount = 1 if sql.startswith("DELETE") and hit else 0
 
     def fetchone(self):
+        if self.sql and self.sql[-1][0].startswith("SELECT count(*)"):
+            return (0,)  # nothing new matches a tidy since the scan
         return (1,) if self._last and isinstance(self._last[0], str) and self._last[0] in self.eligible else None
 
     def fetchall(self):
@@ -129,7 +131,7 @@ def test_new_bins_apply():
         {"kind": "upload", "id": "u1", "label": "big.bin", "paths": ["u/1"]},
         {"kind": "untracked", "id": "x/1", "label": "stray", "paths": ["x/1"]},
         {"kind": "emoji", "id": "e1", "label": ":gone:", "paths": ["emoji/e1/image_deleted"]},
-        {"kind": "jobs", "id": "jobs", "label": "5 rows", "paths": [], "bytes": 0, "at": 10 ** 13},
+        {"kind": "jobs", "id": "jobs", "label": "5 rows", "paths": [], "bytes": 0, "rows": 5, "at": 10 ** 13},
     ]
     sess = FakeSession(eligible={"p1", "u1", "e1"})
     sess.t = {k: k for k in ("posts", "fileinfo", "uploadsessions", "emoji", "jobs")}
@@ -194,6 +196,82 @@ def test_collectable_keeps_nested_unless_parent_kept():
     items = [{"kind": "channel", "id": "c1"}, {"kind": "deleted", "id": "p1", "inside": "c1"}, {"kind": "deleted", "id": "p2"}]
     assert [i["id"] for i in app.collectable(items)] == ["c1", "p2"]
     assert [i["id"] for i in app.collectable(items, {"c1"})] == ["c1", "p1", "p2"]
+
+
+class SharedFake(FakeSession):
+    """FileInfo lookups: `shared` paths are still used by another live row."""
+    def __init__(self, shared=(), **kw):
+        super().__init__(**kw)
+        self.shared, self.t = set(shared), {k: k for k in ("fileinfo", "posts")}
+
+    def execute(self, sql, params=()):
+        super().execute(sql, params)
+        if "= ANY(%s)" in sql and sql.startswith("SELECT"):
+            self._rows = [(p, "", "") for p in params[0] if p in self.shared]
+
+
+def test_shared_files_are_never_removed():
+    """A path another live FileInfo row uses stays: Binday's own delete skips it, and a deleted message whose
+    files are shared isn't handed to Mattermost (whose permanent delete would remove them)."""
+    sess = SharedFake(shared={"o/1"}, eligible={"fi1", "p1"})
+    sess.disk = {"/data/o/1": 10, "/data/o/2": 20, "/data/d/1": 30}
+    seen = []
+    app.apply(sess, [{"kind": "orphan", "id": "fi1", "label": "o", "paths": ["o/1", "o/2"]}],
+              on_item=lambda it, st, freed, errs: seen.append((st, freed)))
+    assert seen == [("deleted", 20)] and "/data/o/1" in sess.disk and "/data/o/2" not in sess.disk, (seen, sess.disk)
+    sess.shared = {"d/1"}
+    seen = []
+    app.apply(sess, [{"kind": "deleted", "id": "p1", "label": "m", "paths": ["d/1"]}],
+              on_item=lambda it, st, freed, errs: seen.append((st, errs)))
+    assert seen[0][0] == "failed" and app.SHARED_FILES in seen[0][1][0], seen
+    assert not [c for c in sess.mmctl_calls if c[:2] == ("post", "delete")] and "/data/d/1" in sess.disk
+
+
+def test_orphan_row_goes_before_its_files():
+    """The FileInfo DELETE re-checks orphan-ness; files are only removed when it deleted the row."""
+    sess = FakeSession(eligible={"fi1"})
+    sess.disk = {"/data/c/1": 100}
+    order = []
+    real_remove = sess.remove
+    sess.remove = lambda path: (order.append("file"), real_remove(path))
+    real_exec = sess.execute
+    sess.execute = lambda sql, params=(): (order.append("row") if sql.startswith("DELETE FROM fileinfo") else None,
+                                          real_exec(sql, params))
+    app.apply(sess, [{"kind": "orphan", "id": "fi1", "label": "o", "paths": ["c/1"]}])
+    assert order == ["row", "file"], order
+    sess = FakeSession(eligible=set())  # no longer an orphan by the time of the DELETE: files stay
+    sess.disk = {"/data/c/1": 100}
+    sess.still = True
+    real = app.still_eligible
+    app.still_eligible = lambda s, it: True
+    try:
+        res = app.apply(sess, [{"kind": "orphan", "id": "fi1", "label": "o", "paths": ["c/1"]}])
+    finally:
+        app.still_eligible = real
+    assert res["skipped"] == 1 and sess.disk == {"/data/c/1": 100}, (res, sess.disk)
+
+
+def test_channel_cleans_its_leftover_file_rows():
+    sess = FakeSession(eligible={"ch1"})
+    sess.disk = {"/data/a/1": 100}
+    app.apply(sess, [{"kind": "channel", "id": "ch1", "label": "c", "paths": ["a/1"]}])
+    assert any(s.startswith("DELETE FROM fileinfo") and "= ANY(%s)" in s and p == (["a/1"],) for s, p in sess.sql), sess.sql
+
+
+def test_dm_bin_skips_bots():
+    sess = FakeSession(eligible=set())
+    sess.t = {k: k for k in ("users", "channels", "bots")}
+    app.deactivated_user_dms(sess)
+    users_sql = next(s for s, _ in sess.sql if "FROM users" in s)
+    assert "FROM bots" in users_sql, users_sql
+
+
+def test_vacuum_never_waits_on_a_busy_table():
+    sess = FakeSession(eligible=set())
+    sess.t = {"fileinfo": "fileinfo"}
+    app.vacuum(sess, ["fileinfo"])
+    stmts = [s for s, _ in sess.sql]
+    assert stmts[0].startswith("SET lock_timeout") and stmts[-1] == "RESET lock_timeout", stmts
 
 
 def test_tidy_never_counts_as_disk():

@@ -104,6 +104,10 @@ def main():
                psql("SELECT string_agg(hash::text, ',' ORDER BY hash) FROM linkmetadata WHERE hash IN (101, 102)"),
                "102" if post else "101,102")
         expect("lingering session of a finished upload (kept)", rows("uploadsessions", [seed["lingering_session"]]), 1)
+        if "bot_dm" in seed:
+            expect("DM with a disabled bot: messages (kept)",
+                   min(int(psql(f"SELECT count(*) FROM posts WHERE channelid = '{seed['bot_dm']['id']}' AND type = ''")), 1), 1)
+            expect("deleted message sharing a live file: row (left alone)", rows("posts", [seed["shared_deleted"]["post_id"]]), 1)
         avatars = sh("docker", "exec", "mm-purge-test-server-1", "sh", "-c", f"ls {DATA}/users/*/profile.png | wc -l").stdout.strip()
         expect("profile images untouched", int(avatars or 0) > 0, True)
 

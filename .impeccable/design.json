@@ -1,0 +1,966 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-13T17:59:27+00:00",
+  "title": "Design System: Mattermost Purge",
+  "extensions": {
+    "colorMeta": {
+      "mattermost-blue": {
+        "role": "primary",
+        "displayName": "Mattermost Blue",
+        "canonical": "#1C58D9",
+        "tonalRamp": [
+          "#091B44",
+          "#0F3075",
+          "#1644A7",
+          "#1C58D9",
+          "#4679E7",
+          "#779DEE",
+          "#AEC4F5",
+          "#E8EFFC"
+        ]
+      },
+      "on-mattermost-blue": {
+        "role": "primary",
+        "displayName": "On Mattermost Blue",
+        "canonical": "#FFFFFF",
+        "tonalRamp": [
+          "#262626",
+          "#424242",
+          "#5E5E5E",
+          "#7A7A7A",
+          "#969696",
+          "#B2B2B2",
+          "#D1D1D1",
+          "#F2F2F2"
+        ]
+      },
+      "rail-navy": {
+        "role": "primary",
+        "displayName": "Rail Navy",
+        "canonical": "#1E325C",
+        "tonalRamp": [
+          "#131F3A",
+          "#213664",
+          "#2E4D8E",
+          "#3C64B9",
+          "#6184CC",
+          "#8CA5D9",
+          "#BAC9E8",
+          "#ECF0F9"
+        ]
+      },
+      "rail-ink": {
+        "role": "primary",
+        "displayName": "Rail Ink",
+        "canonical": "#E8EEFA",
+        "tonalRamp": [
+          "#0E1E3F",
+          "#18346D",
+          "#224A9B",
+          "#2C60C9",
+          "#5380DA",
+          "#81A2E4",
+          "#B4C7EF",
+          "#EAF0FA"
+        ]
+      },
+      "rail-dim": {
+        "role": "primary",
+        "displayName": "Rail Dim",
+        "canonical": "#B4C3E0",
+        "tonalRamp": [
+          "#162136",
+          "#273A5E",
+          "#375286",
+          "#486AAD",
+          "#6B89C2",
+          "#93A8D2",
+          "#BECBE4",
+          "#EDF1F8"
+        ]
+      },
+      "rail-active": {
+        "role": "primary",
+        "displayName": "Rail Active",
+        "canonical": "#2B4577",
+        "tonalRamp": [
+          "#142138",
+          "#233861",
+          "#32508B",
+          "#4168B4",
+          "#6587C7",
+          "#8FA7D6",
+          "#BCCAE7",
+          "#ECF0F8"
+        ]
+      },
+      "rail-signal": {
+        "role": "primary",
+        "displayName": "Rail Signal",
+        "canonical": "#5FD39A",
+        "tonalRamp": [
+          "#113C27",
+          "#1D6843",
+          "#29945F",
+          "#35C07C",
+          "#5BD297",
+          "#87DEB3",
+          "#B7EBD2",
+          "#EBFAF2"
+        ]
+      },
+      "ground": {
+        "role": "neutral",
+        "displayName": "Ground",
+        "canonical": "#F4F6FA",
+        "tonalRamp": [
+          "#182135",
+          "#293A5B",
+          "#3B5382",
+          "#4D6BA8",
+          "#6F89BE",
+          "#96A9CF",
+          "#C0CBE2",
+          "#EDF1F7"
+        ]
+      },
+      "surface": {
+        "role": "neutral",
+        "displayName": "Surface",
+        "canonical": "#FFFFFF",
+        "tonalRamp": [
+          "#262626",
+          "#424242",
+          "#5E5E5E",
+          "#7A7A7A",
+          "#969696",
+          "#B2B2B2",
+          "#D1D1D1",
+          "#F2F2F2"
+        ]
+      },
+      "surface-2": {
+        "role": "neutral",
+        "displayName": "Surface 2",
+        "canonical": "#F8F9FC",
+        "tonalRamp": [
+          "#171F36",
+          "#28355D",
+          "#394B84",
+          "#4962AB",
+          "#6D82C0",
+          "#94A3D1",
+          "#BFC8E3",
+          "#EDF0F7"
+        ]
+      },
+      "line": {
+        "role": "neutral",
+        "displayName": "Line",
+        "canonical": "#D5DBE5",
+        "tonalRamp": [
+          "#1D242F",
+          "#333E52",
+          "#485975",
+          "#5E7397",
+          "#7E90AF",
+          "#A0AEC4",
+          "#C6CEDC",
+          "#EFF2F5"
+        ]
+      },
+      "line-2": {
+        "role": "neutral",
+        "displayName": "Line 2",
+        "canonical": "#E8ECF2",
+        "tonalRamp": [
+          "#1C2431",
+          "#303F55",
+          "#445979",
+          "#58749C",
+          "#7991B3",
+          "#9DAEC8",
+          "#C4CFDE",
+          "#EFF2F6"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#182033",
+        "tonalRamp": [
+          "#182134",
+          "#2A395A",
+          "#3C5180",
+          "#4E68A6",
+          "#7187BC",
+          "#97A7CE",
+          "#C1CAE2",
+          "#EEF0F7"
+        ]
+      },
+      "ink-2": {
+        "role": "neutral",
+        "displayName": "Ink 2",
+        "canonical": "#4B5568",
+        "tonalRamp": [
+          "#20242C",
+          "#383F4D",
+          "#4F5A6E",
+          "#67748E",
+          "#8691A7",
+          "#A6AFBF",
+          "#CACFD9",
+          "#F0F2F4"
+        ]
+      },
+      "ink-3": {
+        "role": "neutral",
+        "displayName": "Ink 3",
+        "canonical": "#5C6679",
+        "tonalRamp": [
+          "#21252B",
+          "#393F4B",
+          "#525A6B",
+          "#6A758B",
+          "#8892A5",
+          "#A8AFBD",
+          "#CBCFD7",
+          "#F1F2F4"
+        ]
+      },
+      "bin-teal": {
+        "role": "secondary",
+        "displayName": "Bin Teal",
+        "canonical": "#12807F",
+        "tonalRamp": [
+          "#094343",
+          "#107473",
+          "#17A5A4",
+          "#1ED7D5",
+          "#48E5E4",
+          "#79ECEB",
+          "#AFF4F3",
+          "#E9FCFC"
+        ]
+      },
+      "on-bin-teal": {
+        "role": "secondary",
+        "displayName": "On Bin Teal",
+        "canonical": "#FFFFFF",
+        "tonalRamp": [
+          "#262626",
+          "#424242",
+          "#5E5E5E",
+          "#7A7A7A",
+          "#969696",
+          "#B2B2B2",
+          "#D1D1D1",
+          "#F2F2F2"
+        ]
+      },
+      "bin-collection-yellow": {
+        "role": "secondary",
+        "displayName": "Bin Collection Yellow",
+        "canonical": "#E8B21A",
+        "tonalRamp": [
+          "#463507",
+          "#785C0C",
+          "#AB8311",
+          "#DEAA16",
+          "#ECBF41",
+          "#F1D074",
+          "#F7E3AC",
+          "#FDF7E8"
+        ]
+      },
+      "on-bin-collection-yellow": {
+        "role": "secondary",
+        "displayName": "On Bin Collection Yellow",
+        "canonical": "#2B2100",
+        "tonalRamp": [
+          "#4C3B00",
+          "#856600",
+          "#BD9100",
+          "#F5BC00",
+          "#FFCE2E",
+          "#FFDB66",
+          "#FFEAA3",
+          "#FFF9E5"
+        ]
+      },
+      "bin-earth-brown": {
+        "role": "secondary",
+        "displayName": "Bin Earth Brown",
+        "canonical": "#6B4A2E",
+        "tonalRamp": [
+          "#352517",
+          "#5D4028",
+          "#845B39",
+          "#AB764A",
+          "#C0936D",
+          "#D1B094",
+          "#E3D0BF",
+          "#F7F2ED"
+        ]
+      },
+      "on-bin-earth-brown": {
+        "role": "secondary",
+        "displayName": "On Bin Earth Brown",
+        "canonical": "#FFFFFF",
+        "tonalRamp": [
+          "#262626",
+          "#424242",
+          "#5E5E5E",
+          "#7A7A7A",
+          "#969696",
+          "#B2B2B2",
+          "#D1D1D1",
+          "#F2F2F2"
+        ]
+      },
+      "delete-red": {
+        "role": "tertiary",
+        "displayName": "Delete Red",
+        "canonical": "#C8262E",
+        "tonalRamp": [
+          "#400C0F",
+          "#6F151A",
+          "#9F1E24",
+          "#CE272F",
+          "#DE4F56",
+          "#E77E84",
+          "#F0B2B5",
+          "#FBEAEA"
+        ]
+      },
+      "on-delete-red": {
+        "role": "tertiary",
+        "displayName": "On Delete Red",
+        "canonical": "#FFFFFF",
+        "tonalRamp": [
+          "#262626",
+          "#424242",
+          "#5E5E5E",
+          "#7A7A7A",
+          "#969696",
+          "#B2B2B2",
+          "#D1D1D1",
+          "#F2F2F2"
+        ]
+      },
+      "delete-red-soft": {
+        "role": "tertiary",
+        "displayName": "Delete Red Soft",
+        "canonical": "#FBE9E9",
+        "tonalRamp": [
+          "#410C0C",
+          "#701414",
+          "#A01D1D",
+          "#CF2626",
+          "#DF4E4E",
+          "#E77E7E",
+          "#F1B1B1",
+          "#FBE9E9"
+        ]
+      },
+      "delete-red-ink": {
+        "role": "tertiary",
+        "displayName": "Delete Red Ink",
+        "canonical": "#A61E25",
+        "tonalRamp": [
+          "#410C0E",
+          "#701419",
+          "#A01D24",
+          "#CF252E",
+          "#DF4E55",
+          "#E87D83",
+          "#F1B1B5",
+          "#FBE9EA"
+        ]
+      },
+      "ok-green": {
+        "role": "tertiary",
+        "displayName": "Ok Green",
+        "canonical": "#1E7B4F",
+        "tonalRamp": [
+          "#0F3E28",
+          "#1A6B44",
+          "#259861",
+          "#30C57E",
+          "#57D69A",
+          "#84E1B5",
+          "#B5EDD3",
+          "#EAFAF3"
+        ]
+      },
+      "kept-grey": {
+        "role": "tertiary",
+        "displayName": "Kept Grey",
+        "canonical": "#C8CFDA",
+        "tonalRamp": [
+          "#1F252E",
+          "#353F4F",
+          "#4C5A71",
+          "#627592",
+          "#8292AB",
+          "#A4AFC1",
+          "#C8CFDA",
+          "#F0F2F5"
+        ]
+      },
+      "dark-rail": {
+        "role": "primary",
+        "displayName": "Dark Rail",
+        "canonical": "#131F3A",
+        "tonalRamp": [
+          "#131F3A",
+          "#213564",
+          "#2F4C8E",
+          "#3C63B8",
+          "#6182CB",
+          "#8CA4D9",
+          "#BAC8E8",
+          "#ECF0F9"
+        ]
+      },
+      "dark-rail-ink": {
+        "role": "primary",
+        "displayName": "Dark Rail Ink",
+        "canonical": "#E3EAF8",
+        "tonalRamp": [
+          "#0F1F3D",
+          "#1B356A",
+          "#264B97",
+          "#3162C4",
+          "#5882D5",
+          "#85A3E0",
+          "#B6C8ED",
+          "#EBF0FA"
+        ]
+      },
+      "dark-rail-dim": {
+        "role": "primary",
+        "displayName": "Dark Rail Dim",
+        "canonical": "#A6B6D6",
+        "tonalRamp": [
+          "#182234",
+          "#2A3A5B",
+          "#3C5381",
+          "#4D6BA8",
+          "#708ABD",
+          "#96A9CF",
+          "#C0CBE2",
+          "#EEF1F7"
+        ]
+      },
+      "dark-rail-active": {
+        "role": "primary",
+        "displayName": "Dark Rail Active",
+        "canonical": "#24396A",
+        "tonalRamp": [
+          "#131F39",
+          "#223563",
+          "#304C8D",
+          "#3E62B7",
+          "#6382CA",
+          "#8DA3D8",
+          "#BAC8E8",
+          "#ECF0F9"
+        ]
+      },
+      "dark-ground": {
+        "role": "neutral",
+        "displayName": "Dark Ground",
+        "canonical": "#0F131C",
+        "tonalRamp": [
+          "#1B2232",
+          "#2E3B56",
+          "#42537B",
+          "#556C9F",
+          "#778AB6",
+          "#9BAACA",
+          "#C3CCDF",
+          "#EEF1F6"
+        ]
+      },
+      "dark-surface": {
+        "role": "neutral",
+        "displayName": "Dark Surface",
+        "canonical": "#161C28",
+        "tonalRamp": [
+          "#1B2331",
+          "#2F3C56",
+          "#43557A",
+          "#576F9E",
+          "#788CB5",
+          "#9CABC9",
+          "#C4CDDE",
+          "#EFF1F6"
+        ]
+      },
+      "dark-surface-2": {
+        "role": "neutral",
+        "displayName": "Dark Surface 2",
+        "canonical": "#1A2130",
+        "tonalRamp": [
+          "#1B2232",
+          "#2F3B56",
+          "#42547A",
+          "#566D9F",
+          "#778BB6",
+          "#9CAAC9",
+          "#C3CCDF",
+          "#EEF1F6"
+        ]
+      },
+      "dark-line": {
+        "role": "neutral",
+        "displayName": "Dark Line",
+        "canonical": "#2C3546",
+        "tonalRamp": [
+          "#1E242F",
+          "#333E51",
+          "#495874",
+          "#5E7296",
+          "#7F8FAE",
+          "#A1ADC4",
+          "#C7CEDC",
+          "#EFF1F5"
+        ]
+      },
+      "dark-line-2": {
+        "role": "neutral",
+        "displayName": "Dark Line 2",
+        "canonical": "#222A39",
+        "tonalRamp": [
+          "#1D2330",
+          "#323D53",
+          "#475776",
+          "#5B7199",
+          "#7C8EB1",
+          "#9FADC6",
+          "#C5CEDD",
+          "#EFF1F5"
+        ]
+      },
+      "dark-ink": {
+        "role": "neutral",
+        "displayName": "Dark Ink",
+        "canonical": "#E8ECF4",
+        "tonalRamp": [
+          "#192234",
+          "#2B3A5A",
+          "#3D5380",
+          "#4F6CA6",
+          "#728ABB",
+          "#97AACE",
+          "#C1CCE1",
+          "#EEF1F7"
+        ]
+      },
+      "dark-ink-2": {
+        "role": "neutral",
+        "displayName": "Dark Ink 2",
+        "canonical": "#B0B9CB",
+        "tonalRamp": [
+          "#1E242E",
+          "#353E50",
+          "#4B5872",
+          "#617294",
+          "#818FAC",
+          "#A3ADC2",
+          "#C8CEDB",
+          "#F0F1F5"
+        ]
+      },
+      "dark-ink-3": {
+        "role": "neutral",
+        "displayName": "Dark Ink 3",
+        "canonical": "#9AA4B8",
+        "tonalRamp": [
+          "#20242D",
+          "#373E4E",
+          "#4E596F",
+          "#657390",
+          "#8490A9",
+          "#A5AEC0",
+          "#C9CED9",
+          "#F0F2F4"
+        ]
+      },
+      "dark-primary": {
+        "role": "primary",
+        "displayName": "Dark Primary",
+        "canonical": "#6F9BFF",
+        "tonalRamp": [
+          "#00174C",
+          "#002985",
+          "#003ABD",
+          "#004BF5",
+          "#2E6EFF",
+          "#6695FF",
+          "#A3BFFF",
+          "#E5EDFF"
+        ]
+      },
+      "dark-on-primary": {
+        "role": "primary",
+        "displayName": "Dark On Primary",
+        "canonical": "#06173D",
+        "tonalRamp": [
+          "#071A46",
+          "#0C2E79",
+          "#1141AC",
+          "#1654DF",
+          "#4176EC",
+          "#749BF1",
+          "#ABC3F7",
+          "#E8EEFD"
+        ]
+      },
+      "dark-bin-teal": {
+        "role": "secondary",
+        "displayName": "Dark Bin Teal",
+        "canonical": "#3FB8B5",
+        "tonalRamp": [
+          "#143938",
+          "#226361",
+          "#308D8A",
+          "#3EB6B3",
+          "#63CAC7",
+          "#8DD8D6",
+          "#BBE8E6",
+          "#ECF8F8"
+        ]
+      },
+      "dark-on-bin-teal": {
+        "role": "secondary",
+        "displayName": "Dark On Bin Teal",
+        "canonical": "#062221",
+        "tonalRamp": [
+          "#0B413F",
+          "#14716D",
+          "#1CA09C",
+          "#25D0CA",
+          "#4DE0DA",
+          "#7DE8E4",
+          "#B1F1EF",
+          "#E9FBFB"
+        ]
+      },
+      "dark-bin-earth-brown": {
+        "role": "secondary",
+        "displayName": "Dark Bin Earth Brown",
+        "canonical": "#B08560",
+        "tonalRamp": [
+          "#332519",
+          "#59412C",
+          "#7E5C3F",
+          "#A47751",
+          "#BA9473",
+          "#CCB199",
+          "#E1D0C2",
+          "#F7F2EE"
+        ]
+      },
+      "dark-on-bin-earth-brown": {
+        "role": "secondary",
+        "displayName": "Dark On Bin Earth Brown",
+        "canonical": "#1E1208",
+        "tonalRamp": [
+          "#3C2410",
+          "#693F1C",
+          "#955928",
+          "#C17434",
+          "#D3915A",
+          "#DFAE86",
+          "#ECCFB7",
+          "#FAF2EB"
+        ]
+      },
+      "dark-delete-red": {
+        "role": "tertiary",
+        "displayName": "Dark Delete Red",
+        "canonical": "#EF5A5F",
+        "tonalRamp": [
+          "#460709",
+          "#790C0F",
+          "#AC1116",
+          "#DF161C",
+          "#ED4046",
+          "#F17478",
+          "#F7ABAE",
+          "#FDE8E8"
+        ]
+      },
+      "dark-on-delete-red": {
+        "role": "tertiary",
+        "displayName": "Dark On Delete Red",
+        "canonical": "#2A0406",
+        "tonalRamp": [
+          "#46070A",
+          "#790C11",
+          "#AC1019",
+          "#E01520",
+          "#ED4049",
+          "#F2737A",
+          "#F7ABAF",
+          "#FDE8E9"
+        ]
+      },
+      "dark-delete-red-soft": {
+        "role": "tertiary",
+        "displayName": "Dark Delete Red Soft",
+        "canonical": "#3A1A1C",
+        "tonalRamp": [
+          "#351819",
+          "#5C292C",
+          "#823A3F",
+          "#A94C52",
+          "#BE6F74",
+          "#D09599",
+          "#E3C0C2",
+          "#F7EDEE"
+        ]
+      },
+      "dark-delete-red-ink": {
+        "role": "tertiary",
+        "displayName": "Dark Delete Red Ink",
+        "canonical": "#FF9A9D",
+        "tonalRamp": [
+          "#4C0002",
+          "#850004",
+          "#BD0006",
+          "#F50007",
+          "#FF2E34",
+          "#FF666B",
+          "#FFA3A6",
+          "#FFE5E6"
+        ]
+      },
+      "dark-ok-green": {
+        "role": "tertiary",
+        "displayName": "Dark Ok Green",
+        "canonical": "#6BD49E",
+        "tonalRamp": [
+          "#113B26",
+          "#1E6741",
+          "#2A925D",
+          "#37BE78",
+          "#5DD095",
+          "#88DDB1",
+          "#B8EAD0",
+          "#EBF9F2"
+        ]
+      },
+      "dark-kept-grey": {
+        "role": "tertiary",
+        "displayName": "Dark Kept Grey",
+        "canonical": "#384357",
+        "tonalRamp": [
+          "#1E242F",
+          "#343E51",
+          "#4A5873",
+          "#607395",
+          "#8090AD",
+          "#A2AEC3",
+          "#C7CEDB",
+          "#EFF1F5"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "The load figure; one per screen."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Screen title."
+      },
+      "headline-dialog": {
+        "displayName": "Headline Dialog",
+        "purpose": "Confirm dialog title."
+      },
+      "step-number": {
+        "displayName": "Step Number",
+        "purpose": "Calendar-day numerals in the rail."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Panel section titles, button labels."
+      },
+      "body-lead": {
+        "displayName": "Body Lead",
+        "purpose": "Explanation line under each screen title."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Table cells, field values, prose."
+      },
+      "body-small": {
+        "displayName": "Body Small",
+        "purpose": "Legend, check descriptions, filter chips."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Field labels, rail step names, footers, plan numbers."
+      },
+      "table-header": {
+        "displayName": "Table Header",
+        "purpose": "DataTable column headings only, uppercase."
+      }
+    },
+    "shadows": [
+      {
+        "name": "dialog-lift",
+        "value": "0 24px 64px rgba(8,20,14,.28)",
+        "purpose": "Confirm AlertDialog only (light)."
+      },
+      {
+        "name": "dialog-lift-dark",
+        "value": "0 24px 64px rgba(0,0,0,.6)",
+        "purpose": "Confirm AlertDialog only (dark)."
+      },
+      {
+        "name": "scrim",
+        "value": "rgba(10,22,16,.46)",
+        "purpose": "Dialog barrier (light); dark rgba(0,0,0,.58)."
+      }
+    ],
+    "motion": [
+      {
+        "name": "spin",
+        "value": "rotate(360deg) 1.2s linear infinite",
+        "purpose": "progress_activity pictogram for per-item work; off under reduced motion."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "window",
+        "value": "1280x800"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Filled Button",
+      "kind": "button",
+      "refersTo": "button-filled",
+      "description": "Primary forward action (Continue, Scan again).",
+      "html": "<button class=\"ds-btn-filled\">Continue <span aria-hidden=\"true\">&#8594;</span></button>",
+      "css": ".ds-btn-filled{font-family:'Public Sans',system-ui,sans-serif;font-weight:700;font-size:14px;background:#1C58D9;color:#fff;border:0;border-radius:12px;min-height:42px;padding:10px 18px;display:inline-flex;align-items:center;gap:8px;cursor:pointer}.ds-btn-filled:hover{background:#2B4577}.ds-btn-filled:focus-visible{outline:2px solid #1C58D9;outline-offset:2px}.ds-btn-filled:disabled{opacity:.45}"
+    },
+    {
+      "name": "Outlined Button",
+      "kind": "button",
+      "refersTo": "button-outlined",
+      "description": "Secondary action (Reconnect, Stop scan, Open log).",
+      "html": "<button class=\"ds-btn-outlined\">Open log</button>",
+      "css": ".ds-btn-outlined{font-family:'Public Sans',system-ui,sans-serif;font-weight:700;font-size:14px;background:transparent;color:#182033;border:1px solid #D5DBE5;border-radius:12px;min-height:42px;padding:10px 18px;cursor:pointer}.ds-btn-outlined:hover{background:#F8F9FC}.ds-btn-outlined:focus-visible{outline:2px solid #1C58D9;outline-offset:2px}"
+    },
+    {
+      "name": "Delete Button",
+      "kind": "button",
+      "refersTo": "button-delete",
+      "description": "The only red element: deletes the reviewed plan; label carries count and size.",
+      "html": "<button class=\"ds-btn-delete\"><svg width=\"19\" height=\"19\" viewBox=\"0 0 24 24\" fill=\"currentColor\" aria-hidden=\"true\"><path d=\"M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z\"/></svg>Delete 1,011 items &middot; 3.90 GB&hellip;</button>",
+      "css": ".ds-btn-delete{font-family:'Public Sans',system-ui,sans-serif;font-weight:700;font-size:14px;background:#C8262E;color:#fff;border:0;border-radius:12px;min-height:42px;padding:10px 18px;display:inline-flex;align-items:center;gap:8px;cursor:pointer;font-variant-numeric:tabular-nums}.ds-btn-delete:hover{background:#A61E25}.ds-btn-delete:focus-visible{outline:2px solid #1C58D9;outline-offset:2px}"
+    },
+    {
+      "name": "Outlined Text Field",
+      "kind": "input",
+      "refersTo": "text-field",
+      "description": "Material outlined field with notched label; 2px civic-green border on focus.",
+      "html": "<label class=\"ds-field\"><span class=\"ds-field-label\">SSH login</span><input class=\"ds-field-input\" value=\"root@chat.example.org\"></label>",
+      "css": ".ds-field{position:relative;display:block;width:280px;font-family:'Public Sans',system-ui,sans-serif;}.ds-field-label{position:absolute;top:-8px;left:10px;padding:0 5px;font-size:12px;font-weight:600;color:#4B5568;background:#fff}.ds-field-input{font-family:'Public Sans',system-ui,sans-serif;width:100%;min-height:46px;border:1px solid #D5DBE5;border-radius:10px;padding:12px 14px;font-size:14px;color:#182033;background:#fff}.ds-field-input:focus{outline:0;border:2px solid #1C58D9;padding:11px 13px}.ds-field:focus-within .ds-field-label{color:#1C58D9}"
+    },
+    {
+      "name": "Bin Chips",
+      "kind": "chip",
+      "refersTo": "bin-chip-channel",
+      "description": "Square bin chips: blue channels, yellow DMs, brown orphans; always beside a text label.",
+      "html": "<span class=\"ds-bin\"><span class=\"ds-chip ds-ch\"><svg width=\"17\" height=\"17\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M20 2H4c-1 0-2 .9-2 2v3.01c0 .72.43 1.34 1 1.69V20c0 1.1 1.1 2 2 2h14c.9 0 2-.9 2-2V8.7c.57-.35 1-.97 1-1.69V4c0-1.1-1-2-2-2zm-5 12H9v-2h6v2zm5-7H4V4h16v3z\"/></svg></span>Channel</span><span class=\"ds-bin\"><span class=\"ds-chip ds-dm\"><svg width=\"17\" height=\"17\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><circle cx=\"12\" cy=\"8\" r=\"4\"/><path d=\"M4 20c0-3 4-5 8-5s8 2 8 5v1H4z\"/></svg></span>DM</span><span class=\"ds-bin\"><span class=\"ds-chip ds-or\"><svg width=\"17\" height=\"17\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M17 7h-4v1.9h4c1.71 0 3.1 1.39 3.1 3.1 0 1.43-.98 2.63-2.31 2.98l1.46 1.46C20.88 15.61 22 13.95 22 12c0-2.76-2.24-5-5-5zM2 4.27l3.11 3.11C3.29 8.12 2 9.91 2 12c0 2.76 2.24 5 5 5h4v-1.9H7c-1.71 0-3.1-1.39-3.1-3.1 0-1.59 1.21-2.9 2.76-3.07L8.73 11H8v2h2.73L13 15.27V17h1.73l4.01 4L20 19.74 3.27 3 2 4.27z\"/></svg></span>Orphaned</span>",
+      "css": ".ds-bin{font-family:'Public Sans',system-ui,sans-serif;display:inline-flex;align-items:center;gap:8px;font-size:13px;color:#182033;margin-right:16px}.ds-chip{width:26px;height:26px;border-radius:7px;display:inline-grid;place-items:center}.ds-ch{background:#12807F;color:#fff}.ds-dm{background:#E8B21A;color:#2B2100}.ds-or{background:#6B4A2E;color:#fff}"
+    },
+    {
+      "name": "Filter Chips",
+      "kind": "chip",
+      "refersTo": "filter-chip",
+      "description": "Single-select kind filter; selected inverts to ink.",
+      "html": "<div class=\"ds-filters\"><button class=\"ds-fchip ds-on\">All 1,012</button><button class=\"ds-fchip\"><i class=\"ds-sw\" style=\"background:#12807F\"></i>Channels 12</button><button class=\"ds-fchip\"><i class=\"ds-sw\" style=\"background:#E8B21A\"></i>DMs 46</button></div>",
+      "css": ".ds-filters{display:flex;gap:8px}.ds-fchip{font-family:'Public Sans',system-ui,sans-serif;min-height:32px;padding:6px 13px;border-radius:9px;border:1px solid #D5DBE5;background:#fff;font-size:13px;font-weight:600;display:inline-flex;align-items:center;gap:7px;color:#182033;cursor:pointer}.ds-fchip:hover{background:#F8F9FC}.ds-fchip:focus-visible{outline:2px solid #1C58D9;outline-offset:2px}.ds-fchip.ds-on{background:#182033;color:#fff;border-color:#182033}.ds-sw{width:12px;height:12px;border-radius:3px;display:inline-block}"
+    },
+    {
+      "name": "Navigation Rail",
+      "kind": "nav",
+      "refersTo": "nav-rail",
+      "description": "Civic-green rail of numbered steps read like calendar days.",
+      "html": "<nav class=\"ds-rail\"><div class=\"ds-step ds-done\"><b><svg width=\"26\" height=\"26\" viewBox=\"0 0 24 24\" fill=\"currentColor\"><path d=\"M9 16.17 4.83 12l-1.42 1.41L9 19 21 7l-1.41-1.41z\"/></svg></b>Scan</div><div class=\"ds-step ds-active\"><b>3</b>Review</div><div class=\"ds-step\"><b>4</b>Collect</div></nav>",
+      "css": ".ds-rail{font-family:'Public Sans',system-ui,sans-serif;width:104px;background:#1C58D9;padding:18px 0;display:flex;flex-direction:column;align-items:center;gap:4px}.ds-step{width:84px;padding:10px 0;border-radius:14px;text-align:center;font-size:12px;font-weight:600;color:#B4C3E0}.ds-step b{height:30px;display:grid;place-items:center;font-size:26px;font-weight:800;letter-spacing:-.02em;line-height:1;margin-bottom:3px}.ds-done{color:#E8EEFA}.ds-active{background:#2B4577;color:#fff}"
+    },
+    {
+      "name": "Load Bar",
+      "kind": "custom",
+      "refersTo": "load-bar",
+      "description": "Signature: the selected load split by bin, proportional, with kept load hatched.",
+      "html": "<section class=\"ds-load\"><div class=\"ds-load-top\"><span class=\"ds-fig\">3.90 GB</span><span class=\"ds-muted\">selected to reclaim, of 4.11 GB found</span></div><div class=\"ds-bar\"><i style=\"width:29.4%;background:#12807F\"></i><i style=\"width:19%;background:#E8B21A\"></i><i style=\"width:46.5%;background:#6B4A2E\"></i><i class=\"ds-hatch\" style=\"width:5.1%\"></i></div></section>",
+      "css": ".ds-load{font-family:'Public Sans',system-ui,sans-serif;background:#fff;border:1px solid #D5DBE5;border-radius:16px;padding:18px 22px 16px;font-variant-numeric:tabular-nums}.ds-load-top{display:flex;align-items:baseline;gap:12px;margin-bottom:12px}.ds-fig{font-size:32px;font-weight:800;letter-spacing:-.02em;color:#182033}.ds-muted{color:#4B5568;font-size:14px}.ds-bar{display:flex;height:20px;border-radius:6px;overflow:hidden;gap:3px}.ds-bar i{display:block;height:100%}.ds-hatch{background:repeating-linear-gradient(135deg,#C8CFDA 0 5px,transparent 5px 9px);box-shadow:inset 0 0 0 1px #C8CFDA}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Collection Calendar",
+    "overview": "The app reads like a municipal waste-sorting calendar: a deep Mattermost-navy rail of numbered days on the left, a cool off-white ground, ink text, Mattermost blue for every action, and three bin colours that tell you what kind of thing is going where. Cleanup is civic sorting. Every item goes in its bin, and the admin sees the load before the truck comes.\n\nDensity is that of a working tool, not a dashboard. One full-width load bar carries the whole story (how much, split by bin, what is kept, what failed), then a dense table where every row carries a stable plan number and a size bar whose length is the size. Public Sans with tabular figures throughout; numbers are the content. The system refuses the stock admin panel of stat tiles plus a table; the blue is reserved for what you can click.\n\nTwo themes ship as equals: light (off-white ground, navy rail, Mattermost blue #1C58D9) and dark (blue-black ground, darker navy rail, the blue lifts to #6F9BFF). The blue is Mattermost's own button blue so the tool feels at home next to the product it cleans; no Mattermost logo or wordmark is used. Every control maps onto a Flet / Material 3 control; the tokens below are meant to seed a `ft.Theme(color_scheme=...)` per theme rather than per-control overrides.",
+    "keyCharacteristics": [
+      "Colour quarantine: bin hues live only in bin chips, legend swatches and the load bar; red lives only on delete.",
+      "Length is quantity: the load bar and per-row size bars are proportional, never decorative.",
+      "Stable plan numbers (#001, #002...) follow an item from Review through Collecting to Results.",
+      "Flat, bordered surfaces; the confirm dialog is the only thing that casts a shadow.",
+      "Tabular figures everywhere; the biggest type on screen is a size in GB."
+    ],
+    "rules": [
+      {
+        "name": "The Colour Quarantine Rule",
+        "body": "Teal, yellow and brown appear only in bin chips, legend swatches, filter-chip swatches and the load bar. Never as a button, link, heading or background tint.",
+        "section": "colors"
+      },
+      {
+        "name": "The Red Owns Destruction Rule",
+        "body": "Delete red marks the act of deleting and nothing else. A failed item is shown with an ink cross-hatch and a `cancel` pictogram plus the word \"Failed\", never in red. Destructive state is always carried by a word and a pictogram as well as colour.",
+        "section": "colors"
+      },
+      {
+        "name": "The Blue Is The Hand Rule",
+        "body": "Interaction (buttons, focus, selection, progress) is Mattermost blue. If it is clickable and not deleting, it is blue or ink. Blue never marks a bin or a status.",
+        "section": "colors"
+      },
+      {
+        "name": "The Figure Is The Headline Rule",
+        "body": "The largest type on the working screens is a quantity. Do not set prose larger than the load figure.",
+        "section": "typography"
+      },
+      {
+        "name": "The One Lift Rule",
+        "body": "Only the irreversible decision floats. Panels, chips and buttons have elevation 0.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "**Do** derive Flet `ColorScheme` from these tokens per theme: primary mattermost-blue / dark-primary, surface, outline line, outline_variant line-2, error delete-red.",
+      "**Do** put the bin chip and a text label together on every row that names an item.",
+      "**Do** show sizes and counts with tabular figures and keep the load figure the largest text on the screen.",
+      "**Do** carry the plan number (#001) with an item on every screen after the scan.",
+      "**Do** make bar lengths proportional to bytes; length is quantity.",
+      "**Do** show failed and skipped work with a pictogram, a word and a hatch, never colour alone.",
+      "**Do** use Material Symbols Rounded (weight 500, outline; filled inside bin chips and status checks) for every pictogram."
+    ],
+    "donts": [
+      "**Don't** use teal, yellow or brown for anything but bins (no teal links, no yellow warnings, no brown headers), and never use blue for a bin or a status.",
+      "**Don't** use delete red for errors, failed items, warnings text or anything that is not the delete action itself.",
+      "**Don't** build stat-tile dashboards; the load bar replaces the tiles.",
+      "**Don't** add shadows to panels, chips or buttons; only the confirm dialog lifts.",
+      "**Don't** round bin chips into circles or swap their pictograms between bins."
+    ]
+  }
+}

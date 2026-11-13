@@ -1,2 +1,5 @@
 psycopg2-binary
 paramiko
+# desktop UI (gui.py); the CLI (app.py) needs only the two above
+flet[desktop]==1.1.2
+keyring

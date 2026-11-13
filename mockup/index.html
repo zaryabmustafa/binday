@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Binday · UI mockup</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Rounded:opsz,wght,FILL,GRAD@20..48,500,0..1,0&display=block" rel="stylesheet">
+<style>
+:root, [data-theme="light"] {
+  --rail: #1E325C; --rail-ink: #E8EEFA; --rail-dim: #B4C3E0; --rail-active: #2B4577; --rail-line: #36507F;
+  --ground: #F4F6FA; --surface: #FFFFFF; --surface-2: #F8F9FC; --line: #D5DBE5; --line-2: #E8ECF2;
+  --ink: #182033; --ink-2: #4B5568; --ink-3: #5C6679;
+  --primary: #1C58D9; --on-primary: #FFFFFF;
+  --teal: #12807F; --on-teal: #FFFFFF; --yellow: #E8B21A; --on-yellow: #2B2100; --brown: #6B4A2E; --on-brown: #FFFFFF;
+  --red: #C8262E; --on-red: #FFFFFF; --red-soft: #FBE9E9; --red-ink: #A61E25;
+  --ok: #1E7B4F; --kept: #C8CFDA; --scrim: rgba(10, 16, 30, .46);
+  --shadow: 0 1px 2px rgba(16, 24, 40, .06), 0 8px 24px rgba(16, 24, 40, .08);
+  --dialog-shadow: 0 24px 64px rgba(8, 14, 28, .28);
+  color-scheme: light;
+}
+[data-theme="dark"] {
+  --rail: #131F3A; --rail-ink: #E3EAF8; --rail-dim: #A6B6D6; --rail-active: #24396A; --rail-line: #2E4474;
+  --ground: #0F131C; --surface: #161C28; --surface-2: #1A2130; --line: #2C3546; --line-2: #222A39;
+  --ink: #E8ECF4; --ink-2: #B0B9CB; --ink-3: #9AA4B8;
+  --primary: #6F9BFF; --on-primary: #06173D;
+  --teal: #3FB8B5; --on-teal: #062221; --yellow: #E8B21A; --on-yellow: #2B2100; --brown: #B08560; --on-brown: #1E1208;
+  --red: #EF5A5F; --on-red: #2A0406; --red-soft: #3A1A1C; --red-ink: #FF9A9D;
+  --ok: #6BD49E; --kept: #384357; --scrim: rgba(0, 0, 0, .58);
+  --shadow: 0 1px 2px rgba(0, 0, 0, .3), 0 8px 24px rgba(0, 0, 0, .35);
+  --dialog-shadow: 0 24px 64px rgba(0, 0, 0, .6);
+  color-scheme: dark;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html { background: var(--ground); }
+body { font: 400 14px/1.45 "Public Sans", system-ui, sans-serif; color: var(--ink); background: var(--ground); font-variant-numeric: tabular-nums; -webkit-font-smoothing: antialiased; }
+::selection { background: var(--primary); color: var(--on-primary); }
+:focus-visible { outline: 2px solid var(--primary); outline-offset: 2px; border-radius: 6px; }
+::-webkit-scrollbar { width: 10px; height: 10px; } ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 8px; border: 2px solid var(--surface); } ::-webkit-scrollbar-track { background: transparent; }
+.ms { font-family: "Material Symbols Rounded"; font-weight: 500; font-size: 20px; line-height: 1; font-variation-settings: "FILL" 0, "opsz" 24; display: inline-block; vertical-align: middle; user-select: none; }
+.ms.fill { font-variation-settings: "FILL" 1, "opsz" 24; }
+
+/* ---------- presentation page ---------- */
+.deck-bar { position: sticky; top: 0; z-index: 10; display: flex; align-items: center; gap: 24px; padding: 14px 32px; background: var(--surface); border-bottom: 1px solid var(--line); }
+.deck-bar h1 { font-size: 16px; font-weight: 700; }
+.deck-bar .note { font-size: 12px; color: var(--ink-2); display: flex; align-items: center; gap: 6px; }
+.deck-bar nav { display: flex; gap: 4px; flex: 1; flex-wrap: wrap; }
+.deck-bar nav a { color: var(--ink-2); text-decoration: none; font-weight: 600; font-size: 13px; padding: 6px 10px; border-radius: 8px; }
+.deck-bar nav a:hover { background: var(--surface-2); color: var(--ink); }
+.seg { display: flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+.seg button { font: 600 13px "Public Sans"; color: var(--ink-2); background: transparent; border: 0; padding: 7px 14px; cursor: pointer; display: flex; align-items: center; gap: 6px; }
+.seg button[aria-pressed="true"] { background: var(--primary); color: var(--on-primary); }
+.deck { padding: 40px 32px 80px; display: flex; flex-direction: column; align-items: center; gap: 56px; }
+.shot { width: 1280px; }
+.shot > header { display: flex; align-items: baseline; gap: 14px; margin-bottom: 12px; }
+.shot > header h2 { font-size: 18px; font-weight: 700; }
+.shot > header p { color: var(--ink-2); }
+.window { width: 1280px; height: 800px; border-radius: 12px; overflow: hidden; border: 1px solid var(--line); box-shadow: var(--shadow); background: var(--ground); display: flex; flex-direction: column; position: relative; }
+.titlebar { height: 34px; flex: none; display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 600; color: var(--ink-2); background: var(--surface); border-bottom: 1px solid var(--line); position: relative; }
+.titlebar .ctl { position: absolute; right: 14px; display: flex; gap: 18px; color: var(--ink-3); }
+.app { flex: 1; display: flex; min-height: 0; }
+
+/* ---------- rail: steps read like calendar dates ---------- */
+.rail { width: 104px; flex: none; background: var(--rail); color: var(--rail-ink); display: flex; flex-direction: column; align-items: center; padding: 18px 0 16px; }
+.mark { width: 52px; height: 52px; margin-bottom: 22px; } .mark img { display: block; }
+.mark .ms { font-size: 26px; }
+.steps { display: flex; flex-direction: column; gap: 4px; }
+.step { width: 84px; padding: 10px 0 10px; border-radius: 14px; text-align: center; font-size: 12px; font-weight: 600; color: var(--rail-dim); }
+.step .num { height: 30px; display: grid; place-items: center; font-size: 26px; font-weight: 800; letter-spacing: -.02em; line-height: 1; margin-bottom: 3px; }
+.step.done { color: var(--rail-ink); }
+.step.done .num .ms { font-size: 26px; font-weight: 700; }
+.step.on { background: var(--rail-active); color: #fff; }
+.server { margin-top: auto; width: 84px; text-align: center; font-size: 11px; color: var(--rail-dim); line-height: 1.3; }
+.server .dot { width: 8px; height: 8px; border-radius: 50%; background: #5FD39A; display: inline-block; margin-bottom: 5px; }
+.server .dot.busy { background: var(--rail-ink); }
+.server b { display: block; color: var(--rail-ink); font-weight: 600; font-size: 12px; word-break: break-all; }
+
+/* ---------- main ---------- */
+main { flex: 1; min-width: 0; display: flex; flex-direction: column; padding: 30px 40px 26px; gap: 20px; overflow: hidden; }
+.head h3 { font-size: 28px; line-height: 1.15; font-weight: 800; letter-spacing: -.015em; }
+.head p { color: var(--ink-2); font-size: 15px; margin-top: 6px; }
+.row { display: flex; align-items: center; gap: 12px; }
+.spacer { flex: 1; }
+.muted { color: var(--ink-2); }
+.num-r { text-align: right; }
+
+/* buttons */
+.btn { font: 700 14px "Public Sans"; border-radius: 12px; min-height: 42px; padding: 10px 18px; display: inline-flex; align-items: center; gap: 8px; border: 0; cursor: pointer; white-space: nowrap; }
+.btn .ms { font-size: 19px; }
+.btn.fill { background: var(--primary); color: var(--on-primary); }
+.btn.outline { background: transparent; color: var(--ink); border: 1px solid var(--line); }
+.btn.text { background: transparent; color: var(--primary); padding: 8px 10px; }
+.btn.danger { background: var(--red); color: var(--on-red); }
+.btn.sm { min-height: 34px; font-size: 13px; padding: 7px 12px; border-radius: 10px; }
+.btn[disabled] { opacity: .45; cursor: default; }
+
+/* fields (Material outlined) */
+.field { position: relative; display: flex; flex-direction: column; gap: 4px; }
+.field label { position: absolute; top: -8px; left: 10px; padding: 0 5px; font-size: 12px; font-weight: 600; color: var(--ink-2); background: var(--surface); }
+.field .box { min-height: 46px; border: 1px solid var(--line); border-radius: 10px; display: flex; align-items: center; gap: 10px; padding: 12px 14px; font-size: 14px; background: var(--surface); }
+.field .box.sm { min-height: 36px; padding: 8px 12px; }
+.field .box .ph { color: var(--ink-3); }
+.field .box .ms { color: var(--ink-3); font-size: 19px; }
+.field .help { font-size: 12px; color: var(--ink-3); padding-left: 14px; }
+.field.focus .box { border: 2px solid var(--primary); padding: 11px 13px; }
+.field.focus label { color: var(--primary); }
+
+/* switch & checkbox */
+.switch { width: 46px; height: 28px; border-radius: 14px; background: var(--primary); position: relative; flex: none; }
+.switch::after { content: ""; position: absolute; right: 4px; top: 4px; width: 20px; height: 20px; border-radius: 50%; background: var(--on-primary); }
+.cb { width: 18px; height: 18px; border-radius: 4px; border: 2px solid var(--ink-2); display: inline-grid; place-items: center; flex: none; vertical-align: middle; }
+.cb.on { background: var(--primary); border-color: var(--primary); }
+.cb.on::after { content: "check"; font-family: "Material Symbols Rounded"; font-size: 15px; font-weight: 700; color: var(--on-primary); }
+
+/* bins */
+.chip { width: 26px; height: 26px; border-radius: 7px; display: inline-grid; place-items: center; flex: none; }
+.chip .ms { font-size: 17px; font-variation-settings: "FILL" 1, "opsz" 20; }
+.chip.lg { width: 40px; height: 40px; border-radius: 10px; }
+.chip.lg .ms { font-size: 24px; }
+.b-ch { background: var(--teal); color: var(--on-teal); }
+.b-dm { background: var(--yellow); color: var(--on-yellow); }
+.b-or { background: var(--brown); color: var(--on-brown); }
+.sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; flex: none; }
+/* not collected: kept/skipped = light hatch, failed = ink cross-hatch (never red) */
+.hatch { background: repeating-linear-gradient(135deg, var(--kept) 0 5px, transparent 5px 9px); box-shadow: inset 0 0 0 1px var(--kept); }
+.xhatch { background: repeating-linear-gradient(45deg, var(--ink) 0 1.5px, transparent 1.5px 5px), repeating-linear-gradient(-45deg, var(--ink) 0 1.5px, transparent 1.5px 5px); box-shadow: inset 0 0 0 1px var(--ink); }
+
+/* panels */
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 16px; }
+.section-title { display: flex; align-items: center; gap: 10px; font-size: 15px; font-weight: 700; }
+.section-title .ms { color: var(--primary); }
+
+/* load bar */
+.load { padding: 18px 22px 16px; }
+.load-top { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
+.fig { font-size: 32px; font-weight: 800; letter-spacing: -.02em; }
+.bar { display: flex; height: 20px; border-radius: 6px; overflow: hidden; gap: 3px; }
+.bar > i { display: block; height: 100%; }
+.bar > .track { display: flex; background: var(--line-2); }
+.bar > .track > i { display: block; height: 100%; }
+.legend { display: flex; gap: 24px; margin-top: 12px; font-size: 13px; color: var(--ink); flex-wrap: wrap; }
+.legend span { display: inline-flex; align-items: center; gap: 8px; }
+.legend .q { color: var(--ink-2); }
+
+/* table */
+.tbl { width: 100%; border-collapse: collapse; font-size: 14px; }
+.tbl th { position: sticky; top: 0; text-align: left; font-size: 12px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--ink-2); padding: 11px 14px; border-bottom: 1px solid var(--line); background: var(--surface-2); white-space: nowrap; }
+.tbl th .ms { font-size: 16px; }
+.tbl td { padding: 9px 14px; border-bottom: 1px solid var(--line-2); white-space: nowrap; }
+.tbl tr:last-child td { border-bottom: 0; }
+.tbl tr.sel td { background: color-mix(in srgb, var(--primary) 5%, transparent); }
+.tbl tr.kept td, .tbl tr.queued td { color: var(--ink-2); }
+.tbl tr.now td { background: color-mix(in srgb, var(--primary) 9%, transparent); font-weight: 600; }
+.tbl .plan { color: var(--ink-3); font-size: 12px; font-weight: 600; }
+.tbl .name { font-weight: 600; }
+.bin { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; }
+.sz { display: flex; align-items: center; justify-content: flex-end; gap: 10px; }
+.sz i { height: 8px; border-radius: 3px; background: var(--ink); display: block; }
+.tbl tr.kept .sz i { background: var(--kept); }
+.tag { font-size: 11px; font-weight: 700; padding: 3px 8px; border-radius: 6px; background: var(--surface-2); border: 1px solid var(--line); color: var(--ink-2); margin-left: 8px; }
+.scroll { overflow-y: auto; flex: 1; min-height: 0; }
+.tfoot { display: flex; align-items: center; gap: 8px; padding: 9px 14px; border-top: 1px solid var(--line); font-size: 12px; color: var(--ink-2); background: var(--surface-2); }
+.status { display: inline-flex; align-items: center; gap: 6px; }
+.status .ms { font-size: 18px; }
+
+.filters { display: flex; gap: 8px; }
+.fchip { min-height: 32px; padding: 6px 13px; border-radius: 9px; border: 1px solid var(--line); background: var(--surface); font-size: 13px; font-weight: 600; display: inline-flex; align-items: center; gap: 7px; color: var(--ink); }
+.fchip.on { background: var(--ink); color: var(--surface); border-color: var(--ink); }
+
+/* checks */
+.check { display: flex; gap: 12px; align-items: flex-start; padding: 11px 0; border-bottom: 1px solid var(--line-2); }
+.check:last-child { border-bottom: 0; }
+.check .ms { font-size: 21px; margin-top: -1px; }
+.check .t { font-weight: 600; }
+.check .d { color: var(--ink-2); font-size: 13px; }
+.c-ok { color: var(--ok); }
+
+/* progress */
+.prog { height: 6px; border-radius: 3px; background: var(--line-2); overflow: hidden; }
+.prog > i { display: block; height: 100%; background: var(--primary); border-radius: 3px; }
+.spin { animation: spin 1.2s linear infinite; }
+
+/* dialog */
+.scrim { position: absolute; inset: 34px 0 0 0; background: var(--scrim); display: grid; place-items: center; }
+.dialog { width: 540px; background: var(--surface); border-radius: 22px; box-shadow: var(--dialog-shadow); padding: 26px 28px 22px; display: flex; flex-direction: column; gap: 16px; }
+.dialog .warn-ico { width: 48px; height: 48px; border-radius: 14px; background: var(--red-soft); color: var(--red-ink); display: grid; place-items: center; }
+.dialog .warn-ico .ms { font-size: 28px; }
+.dialog h4 { font-size: 22px; font-weight: 800; letter-spacing: -.01em; }
+.brk { border: 1px solid var(--line); border-radius: 14px; }
+.brk .r { display: flex; align-items: center; gap: 12px; padding: 11px 14px; border-bottom: 1px solid var(--line-2); }
+.brk .r:last-child { border-bottom: 0; font-weight: 800; background: var(--surface-2); border-radius: 0 0 14px 14px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; } }
+</style>
+</head>
+<body>
+
+<div class="deck-bar">
+  <h1>Binday · UI mockup</h1>
+  <nav aria-label="Screens">
+    <a href="#connect">1 Connect</a><a href="#scan">2 Scan</a><a href="#review">3 Review</a>
+    <a href="#confirm">3b Confirm</a><a href="#collecting">4 Collecting</a><a href="#results">4b Results</a>
+  </nav>
+  <span class="note"><span class="ms" style="font-size:16px">info</span>Servers, names and sizes are illustrative</span>
+  <div class="seg" role="group" aria-label="Theme">
+    <button data-t="light"><span class="ms">light_mode</span>Light</button>
+    <button data-t="dark"><span class="ms">dark_mode</span>Dark</button>
+  </div>
+</div>
+
+<div class="deck">
+
+<!-- ======================================================= 1 CONNECT -->
+<section class="shot" id="connect">
+  <header><h2>1 · Connect</h2><p>Saved profile loaded and connected. Every check passed, so Scan is unlocked.</p></header>
+  <div class="window">
+    <div class="titlebar">Binday<span class="ctl"><span class="ms">remove</span><span class="ms">crop_square</span><span class="ms">close</span></span></div>
+    <div class="app">
+      <nav class="rail">
+        <div class="mark"><img src="../assets/brand/mark.svg" alt="Binday" width="52" height="52"></div>
+        <div class="steps">
+          <div class="step on"><div class="num">1</div>Connect</div>
+          <div class="step"><div class="num">2</div>Scan</div>
+          <div class="step"><div class="num">3</div>Review</div>
+          <div class="step"><div class="num">4</div>Collect</div>
+        </div>
+        <div class="server"><span class="dot"></span><b>prod-chat</b>connected</div>
+      </nav>
+      <main>
+        <div class="row">
+          <div class="head"><h3>Connect to your server</h3><p>Works over SSH. Nothing on the server changes until you confirm a deletion.</p></div>
+          <div class="spacer"></div>
+          <div class="field" style="width:230px"><label>Profile</label><div class="box"><span class="ms">bookmark</span>prod-chat<span class="spacer"></span><span class="ms">expand_more</span></div></div>
+          <button class="btn outline sm"><span class="ms">save</span>Save</button>
+          <button class="btn text sm"><span class="ms">add</span>New</button>
+        </div>
+
+        <div style="display:grid;grid-template-columns:1fr 1fr 340px;grid-template-rows:auto auto 1fr;gap:18px;flex:1;min-height:0;align-items:start">
+          <div class="panel" style="padding:20px 20px 18px;display:flex;flex-direction:column;gap:20px">
+            <div class="section-title"><span class="ms">dns</span>Server</div>
+            <div class="field"><label>SSH login</label><div class="box">root@chat.example.org</div></div>
+            <div class="field"><label>SSH password</label><div class="box"><span class="ph">Not set</span><span class="spacer"></span><span class="ms">visibility</span></div><span class="help">Leave empty to use your SSH key or agent</span></div>
+            <div class="field"><label>Mattermost data directory</label><div class="box">/opt/mattermost/data</div></div>
+            <div class="field"><label>Docker container</label><div class="box">mattermost</div></div>
+          </div>
+          <div class="panel" style="padding:20px 20px 18px;display:flex;flex-direction:column;gap:20px">
+            <div class="section-title"><span class="ms">database</span>Database</div>
+            <div class="row" style="gap:12px"><div class="switch" role="switch" aria-checked="true"></div><div><b style="font-weight:600">Go through the SSH connection</b><div class="muted" style="font-size:12px">The database doesn't need to be reachable from this computer</div></div></div>
+            <div style="display:grid;grid-template-columns:1fr 96px;gap:12px"><div class="field"><label>Host (seen from server)</label><div class="box">127.0.0.1</div></div><div class="field"><label>Port</label><div class="box">5432</div></div></div>
+            <div class="field"><label>Database</label><div class="box">mattermost</div></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px"><div class="field"><label>User</label><div class="box">mmuser</div></div><div class="field"><label>Password</label><div class="box">••••••••••<span class="spacer"></span><span class="ms">visibility</span></div></div></div>
+          </div>
+          <div class="panel" style="padding:20px;display:flex;flex-direction:column;grid-column:3;grid-row:1 / span 2;align-self:stretch">
+            <div class="section-title"><span class="ms">lan</span>Connection</div>
+            <div style="margin-top:8px">
+              <div class="check"><span class="ms fill c-ok">check_circle</span><div><div class="t">SSH connected</div><div class="d">root@chat.example.org · key from agent</div></div></div>
+              <div class="check"><span class="ms fill c-ok">check_circle</span><div><div class="t">Database reachable</div><div class="d">mattermost · schema public · via SSH</div></div></div>
+              <div class="check"><span class="ms fill c-ok">check_circle</span><div><div class="t">mmctl works</div><div class="d">container mattermost · 4 teams</div></div></div>
+              <div class="check"><span class="ms fill c-ok">check_circle</span><div><div class="t">Channel deletion is on</div><div class="d">EnableAPIChannelDeletion = true</div></div></div>
+              <div class="check"><span class="ms fill c-ok">check_circle</span><div><div class="t">Data directory found</div><div class="d">48.6 GB in use</div></div></div>
+            </div>
+            <div class="spacer"></div>
+            <div class="row" style="gap:10px"><button class="btn outline" style="flex:1;justify-content:center"><span class="ms">refresh</span>Reconnect</button><button class="btn fill" style="flex:1.3;justify-content:center">Continue<span class="ms">arrow_forward</span></button></div>
+          </div>
+          <div class="panel" style="padding:18px 20px;grid-column:1 / span 2;grid-row:2;display:flex;flex-direction:column;gap:18px">
+            <div class="row"><div class="section-title"><span class="ms">terminal</span>mmctl login</div><span class="muted" style="font-size:13px">Optional. Only needed if mmctl inside the container isn't logged in already.</span><span class="spacer"></span><span class="ms muted">expand_less</span></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px"><div class="field"><label>Server URL</label><div class="box"><span class="ph">http://localhost:8065</span></div></div><div class="field"><label>Access token</label><div class="box"><span class="ph">Not set</span><span class="spacer"></span><span class="ms">visibility</span></div></div></div>
+          </div>
+        </div>
+      </main>
+    </div>
+  </div>
+</section>
+
+<!-- ======================================================= 2 SCAN -->
+<section class="shot" id="scan">
+  <header><h2>2 · Scan</h2><p>Dry run in progress: channels measured, DMs being measured, orphans queued. Read-only.</p></header>
+  <div class="window">
+    <div class="titlebar">Binday<span class="ctl"><span class="ms">remove</span><span class="ms">crop_square</span><span class="ms">close</span></span></div>
+    <div class="app">
+      <nav class="rail">
+        <div class="mark"><img src="../assets/brand/mark.svg" alt="Binday" width="52" height="52"></div>
+        <div class="steps">
+          <div class="step done"><div class="num"><span class="ms">check</span></div>Connect</div>
+          <div class="step on"><div class="num">2</div>Scan</div>
+          <div class="step"><div class="num">3</div>Review</div>
+          <div class="step"><div class="num">4</div>Collect</div>
+        </div>
+        <div class="server"><span class="dot"></span><b>prod-chat</b>connected</div>
+      </nav>
+      <main style="gap:18px">
+        <div class="head"><h3>Choose what to collect</h3><p>A scan only reads. It lists each item and measures it on disk, so you can review before anything is deleted.</p></div>
+
+        <div class="panel" style="overflow:hidden">
+          <table class="tbl">
+            <thead><tr><th style="width:52px"></th><th>Bin</th><th>What it removes</th><th>What stays</th><th class="num-r">Items</th><th class="num-r">Files</th><th class="num-r" style="width:150px">Size</th></tr></thead>
+            <tbody>
+              <tr>
+                <td><span class="cb on"></span></td>
+                <td><span class="bin"><span class="chip lg b-ch"><span class="ms">inventory_2</span></span><b style="font-size:15px">Archived channels</b></span></td>
+                <td class="muted" style="white-space:normal;max-width:250px">The channel, its messages and every file posted in it</td>
+                <td class="muted" style="white-space:normal;max-width:220px">Active channels, even empty ones</td>
+                <td class="num-r"><b>12</b></td><td class="num-r">652</td><td class="num-r"><b>1.42 GB</b> <span class="ms fill c-ok" style="font-size:18px;margin-left:6px">check_circle</span></td>
+              </tr>
+              <tr>
+                <td><span class="cb on"></span></td>
+                <td><span class="bin"><span class="chip lg b-dm"><span class="ms">person_off</span></span><b style="font-size:15px">Deactivated users' DMs</b></span></td>
+                <td class="muted" style="white-space:normal;max-width:250px">Direct messages with deactivated users, and their files</td>
+                <td class="muted" style="white-space:normal;max-width:220px">The user accounts, and DMs between active users</td>
+                <td class="num-r"><b>31</b> <span class="muted">of 46</span></td><td class="num-r">488</td><td class="num-r"><b>0.52 GB</b> <span class="ms c-ok spin" style="font-size:18px;margin-left:6px">progress_activity</span></td>
+              </tr>
+              <tr>
+                <td><span class="cb on"></span></td>
+                <td><span class="bin"><span class="chip lg b-or"><span class="ms">link_off</span></span><b style="font-size:15px">Orphaned files</b></span></td>
+                <td class="muted" style="white-space:normal;max-width:250px">Files whose message no longer exists, and their records</td>
+                <td class="muted" style="white-space:normal;max-width:220px">Avatars, plugins, uploads in drafts</td>
+                <td class="num-r muted">Waiting</td><td class="num-r muted">–</td><td class="num-r muted">–</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="panel" style="padding:16px 22px;display:flex;flex-direction:column;gap:10px">
+          <div class="row"><b>Measuring DM with j.okafor</b><span class="muted">· 31 of 46 DMs</span><span class="spacer"></span><span class="muted">1 min 48 s</span></div>
+          <div class="prog"><i style="width:46%"></i></div>
+        </div>
+
+        <div class="panel" style="overflow:hidden;flex:1;min-height:0;display:flex;flex-direction:column">
+          <div class="row" style="padding:12px 16px;border-bottom:1px solid var(--line)"><b>Found so far</b><span class="muted">43 items · 1.94 GB · newest first</span></div>
+          <div class="scroll">
+          <table class="tbl">
+            <tbody>
+              <tr><td class="name"><span class="bin"><span class="chip b-dm"><span class="ms">person_off</span></span>DM with j.okafor</span></td><td class="muted">Direct messages</td><td class="num-r">96 files</td><td class="num-r" style="width:120px"><b>181 MB</b></td></tr>
+              <tr><td class="name"><span class="bin"><span class="chip b-dm"><span class="ms">person_off</span></span>DM with s.haddad</span></td><td class="muted">Direct messages</td><td class="num-r">12 files</td><td class="num-r"><b>9 MB</b></td></tr>
+              <tr><td class="name"><span class="bin"><span class="chip b-dm"><span class="ms">person_off</span></span>DM with m.lindqvist</span></td><td class="muted">Direct messages</td><td class="num-r">64 files</td><td class="num-r"><b>122 MB</b></td></tr>
+              <tr><td class="name"><span class="bin"><span class="chip b-ch"><span class="ms">inventory_2</span></span>incident-2022-11-db</span></td><td class="muted">operations</td><td class="num-r">57 files</td><td class="num-r"><b>98 MB</b></td></tr>
+              <tr><td class="name"><span class="bin"><span class="chip b-ch"><span class="ms">inventory_2</span></span>payroll-2023</span></td><td class="muted">finance</td><td class="num-r">31 files</td><td class="num-r"><b>214 MB</b></td></tr>
+              <tr><td class="name"><span class="bin"><span class="chip b-ch"><span class="ms">inventory_2</span></span>design-assets-old</span></td><td class="muted">design</td><td class="num-r">203 files</td><td class="num-r"><b>355 MB</b></td></tr>
+            </tbody>
+          </table>
+          </div>
+        </div>
+
+        <div class="row">
+          <span class="muted"><span class="ms" style="font-size:18px">visibility</span> Dry run · nothing is deleted at this step</span>
+          <span class="spacer"></span>
+          <button class="btn outline"><span class="ms">stop_circle</span>Stop scan</button>
+          <button class="btn fill" disabled>Review<span class="ms">arrow_forward</span></button>
+        </div>
+      </main>
+    </div>
+  </div>
+</section>
+
+<!-- ======================================================= 3 REVIEW -->
+<section class="shot" id="review">
+  <header><h2>3 · Review</h2><p>The load, sorted by bin. One item unticked (kept). The bar and the delete button follow the selection.</p></header>
+  <div class="window">
+    <div class="titlebar">Binday<span class="ctl"><span class="ms">remove</span><span class="ms">crop_square</span><span class="ms">close</span></span></div>
+    <div class="app">
+      <nav class="rail">
+        <div class="mark"><img src="../assets/brand/mark.svg" alt="Binday" width="52" height="52"></div>
+        <div class="steps">
+          <div class="step done"><div class="num"><span class="ms">check</span></div>Connect</div>
+          <div class="step done"><div class="num"><span class="ms">check</span></div>Scan</div>
+          <div class="step on"><div class="num">3</div>Review</div>
+          <div class="step"><div class="num">4</div>Collect</div>
+        </div>
+        <div class="server"><span class="dot"></span><b>prod-chat</b>connected</div>
+      </nav>
+      <main style="gap:16px">
+        <div class="head"><h3>Review the load</h3><p>Dry run finished 14:32. Untick anything you want to keep. Largest first.</p></div>
+
+        <section class="panel load" aria-label="Selected load">
+          <div class="load-top"><span class="fig">3.90 GB</span><span class="muted">selected to reclaim, of 4.11 GB found</span><span class="spacer"></span><span class="muted"><b style="color:var(--ink)">1,011</b> of 1,012 items · 4,215 files</span></div>
+          <div class="bar"><i class="b-ch" style="width:29.4%"></i><i class="b-dm" style="width:19%"></i><i class="b-or" style="width:46.5%"></i><i class="hatch" style="width:5.1%"></i></div>
+          <div class="legend">
+            <span><i class="sw b-ch"></i>Archived channels <b>11</b> <span class="q">· 1.21 GB</span></span>
+            <span><i class="sw b-dm"></i>Deactivated DMs <b>46</b> <span class="q">· 0.78 GB</span></span>
+            <span><i class="sw b-or"></i>Orphaned files <b>954</b> <span class="q">· 1.91 GB</span></span>
+            <span><i class="sw hatch"></i>Kept <b>1</b> <span class="q">· 0.21 GB</span></span>
+          </div>
+        </section>
+
+        <div class="row">
+          <div class="filters"><span class="fchip on">All 1,012</span><span class="fchip"><i class="sw b-ch"></i>Channels 12</span><span class="fchip"><i class="sw b-dm"></i>DMs 46</span><span class="fchip"><i class="sw b-or"></i>Orphans 954</span></div>
+          <span class="spacer"></span>
+          <div class="field" style="width:240px"><div class="box sm"><span class="ms">search</span><span class="ph">Filter by name</span></div></div>
+          <button class="btn text sm">Select all</button><button class="btn text sm">Select none</button>
+        </div>
+
+        <div class="panel" style="overflow:hidden;flex:1;min-height:0;display:flex;flex-direction:column">
+          <div class="scroll">
+          <table class="tbl">
+            <thead><tr><th style="width:46px"><span class="cb on" style="opacity:.6"></span></th><th style="width:64px">Plan</th><th>Name</th><th>Bin</th><th>Location</th><th class="num-r">Files</th><th class="num-r" style="width:230px">Size <span class="ms">arrow_downward</span></th></tr></thead>
+            <tbody>
+              <tr class="sel"><td><span class="cb on"></span></td><td class="plan">#001</td><td class="name">954 orphaned files</td><td><span class="bin"><span class="chip b-or"><span class="ms">link_off</span></span>Orphaned</span></td><td>FileInfo table</td><td class="num-r">2,862</td><td><div class="sz"><i style="width:140px"></i>1.91 GB</div></td></tr>
+              <tr class="sel"><td><span class="cb on"></span></td><td class="plan">#002</td><td class="name">release-2023-q2</td><td><span class="bin"><span class="chip b-ch"><span class="ms">inventory_2</span></span>Channel</span></td><td>engineering</td><td class="num-r">418</td><td><div class="sz"><i style="width:45px"></i>612 MB</div></td></tr>
+              <tr class="sel"><td><span class="cb on"></span></td><td class="plan">#003</td><td class="name">design-assets-old</td><td><span class="bin"><span class="chip b-ch"><span class="ms">inventory_2</span></span>Channel</span></td><td>design</td><td class="num-r">203</td><td><div class="sz"><i style="width:26px"></i>355 MB</div></td></tr>
+              <tr class="kept"><td><span class="cb"></span></td><td class="plan">#004</td><td class="name">payroll-2023<span class="tag">Kept</span></td><td><span class="bin"><span class="chip b-ch"><span class="ms">inventory_2</span></span>Channel</span></td><td>finance</td><td class="num-r">31</td><td><div class="sz"><i style="width:16px"></i>214 MB</div></td></tr>
+              <tr class="sel"><td><span class="cb on"></span></td><td class="plan">#005</td><td class="name">DM with j.okafor</td><td><span class="bin"><span class="chip b-dm"><span class="ms">person_off</span></span>DM</span></td><td>Direct messages</td><td class="num-r">96</td><td><div class="sz"><i style="width:13px"></i>181 MB</div></td></tr>
+              <tr class="sel"><td><span class="cb on"></span></td><td class="plan">#006</td><td class="name">DM with m.lindqvist</td><td><span class="bin"><span class="chip b-dm"><span class="ms">person_off</span></span>DM</span></td><td>Direct messages</td><td class="num-r">64</td><td><div class="sz"><i style="width:9px"></i>122 MB</div></td></tr>
+              <tr class="sel"><td><span class="cb on"></span></td><td class="plan">#007</td><td class="name">incident-2022-11-db</td><td><span class="bin"><span class="chip b-ch"><span class="ms">inventory_2</span></span>Channel</span></td><td>operations</td><td class="num-r">57<span class="tag">3 missing</span></td><td><div class="sz"><i style="width:7px"></i>98 MB</div></td></tr>
+              <tr class="sel"><td><span class="cb on"></span></td><td class="plan">#008</td><td class="name">DM with a.reyes</td><td><span class="bin"><span class="chip b-dm"><span class="ms">person_off</span></span>DM</span></td><td>Direct messages</td><td class="num-r">41</td><td><div class="sz"><i style="width:6px"></i>87 MB</div></td></tr>
+              <tr class="sel"><td><span class="cb on"></span></td><td class="plan">#009</td><td class="name">vendor-onboarding</td><td><span class="bin"><span class="chip b-ch"><span class="ms">inventory_2</span></span>Channel</span></td><td>sales</td><td class="num-r">22</td><td><div class="sz"><i style="width:5px"></i>64 MB</div></td></tr>
+            </tbody>
+          </table>
+          </div>
+          <div class="tfoot"><span class="ms" style="font-size:16px">swap_vert</span>59 rows · scroll for more · the 954 orphaned files are one row</div>
+        </div>
+
+        <div class="row">
+          <span class="cb"></span><span>Run VACUUM FULL afterwards</span><span class="muted">· shrinks the database file, locks FileInfo while it runs</span>
+          <span class="spacer"></span>
+          <button class="btn danger"><span class="ms">delete_forever</span>Delete 1,011 items · 3.90 GB…</button>
+        </div>
+      </main>
+    </div>
+  </div>
+</section>
+
+<!-- ======================================================= 3b CONFIRM -->
+<section class="shot" id="confirm">
+  <header><h2>3b · Confirm</h2><p>Typed confirmation: the admin must type DELETE. Shown with it typed, so the button is enabled.</p></header>
+  <div class="window">
+    <div class="titlebar">Binday<span class="ctl"><span class="ms">remove</span><span class="ms">crop_square</span><span class="ms">close</span></span></div>
+    <div class="app" aria-hidden="true">
+      <nav class="rail">
+        <div class="mark"><img src="../assets/brand/mark.svg" alt="Binday" width="52" height="52"></div>
+        <div class="steps">
+          <div class="step done"><div class="num"><span class="ms">check</span></div>Connect</div>
+          <div class="step done"><div class="num"><span class="ms">check</span></div>Scan</div>
+          <div class="step on"><div class="num">3</div>Review</div>
+          <div class="step"><div class="num">4</div>Collect</div>
+        </div>
+        <div class="server"><span class="dot"></span><b>prod-chat</b>connected</div>
+      </nav>
+      <main style="gap:16px">
+        <div class="head"><h3>Review the load</h3><p>Dry run finished 14:32. Untick anything you want to keep. Largest first.</p></div>
+        <section class="panel load"><div class="load-top"><span class="fig">3.90 GB</span><span class="muted">selected to reclaim, of 4.11 GB found</span></div>
+          <div class="bar"><i class="b-ch" style="width:29.4%"></i><i class="b-dm" style="width:19%"></i><i class="b-or" style="width:46.5%"></i><i class="hatch" style="width:5.1%"></i></div></section>
+        <div class="panel" style="flex:1"></div>
+      </main>
+    </div>
+    <div class="scrim">
+      <div class="dialog" role="alertdialog" aria-labelledby="dlg-t">
+        <div class="row" style="gap:14px"><div class="warn-ico"><span class="ms fill">warning</span></div><div><h4 id="dlg-t">Delete 1,011 items for good?</h4><div class="muted">From prod-chat · /opt/mattermost/data</div></div></div>
+        <div class="brk">
+          <div class="r"><span class="chip b-ch"><span class="ms">inventory_2</span></span>11 archived channels<span class="spacer"></span><b>1.21 GB</b></div>
+          <div class="r"><span class="chip b-dm"><span class="ms">person_off</span></span>46 DMs of deactivated users<span class="spacer"></span><b>0.78 GB</b></div>
+          <div class="r"><span class="chip b-or"><span class="ms">link_off</span></span>954 orphaned files<span class="spacer"></span><b>1.91 GB</b></div>
+          <div class="r"><span class="ms" style="width:26px;text-align:center">functions</span>Total · 4,215 files<span class="spacer"></span>3.90 GB</div>
+        </div>
+        <p class="muted">Files are removed from disk, channels are deleted with mmctl, and orphaned file records are removed from the database. <b style="color:var(--ink)">This can't be undone.</b> Back up the database and the data directory first.</p>
+        <div class="field focus" style="margin-top:6px"><label>Type DELETE to confirm</label><div class="box">DELETE<span class="spacer"></span><span class="ms fill c-ok">check_circle</span></div></div>
+        <div class="row" style="justify-content:flex-end;margin-top:4px"><button class="btn text">Cancel</button><button class="btn danger"><span class="ms">delete_forever</span>Delete 3.90 GB</button></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ======================================================= 4 COLLECTING -->
+<section class="shot" id="collecting">
+  <header><h2>4 · Collecting</h2><p>The route runs in plan order. Each bin fills in place on the same bar as Review; the rail is locked until it finishes.</p></header>
+  <div class="window">
+    <div class="titlebar">Binday<span class="ctl"><span class="ms">remove</span><span class="ms">crop_square</span><span class="ms">close</span></span></div>
+    <div class="app">
+      <nav class="rail">
+        <div class="mark"><img src="../assets/brand/mark.svg" alt="Binday" width="52" height="52"></div>
+        <div class="steps">
+          <div class="step done"><div class="num"><span class="ms">check</span></div>Connect</div>
+          <div class="step done"><div class="num"><span class="ms">check</span></div>Scan</div>
+          <div class="step done"><div class="num"><span class="ms">check</span></div>Review</div>
+          <div class="step on"><div class="num"><span class="ms spin" style="font-size:24px">progress_activity</span></div>Collecting</div>
+        </div>
+        <div class="server"><span class="dot busy"></span><b>prod-chat</b>deleting</div>
+      </nav>
+      <main style="gap:18px">
+        <div class="head"><h3>Collecting the load…</h3><p>Keep this window open. Each item is checked again right before it is deleted.</p></div>
+        <section class="panel load">
+          <div class="load-top"><span class="fig">3.08 GB</span><span class="muted">collected of 3.90 GB</span><span class="spacer"></span><span class="muted"><b style="color:var(--ink)">958</b> of 1,011 items · 4 min 10 s</span></div>
+          <div class="bar">
+            <span class="track" style="width:31%"><i class="b-ch" style="width:80%"></i></span>
+            <span class="track" style="width:20%"><i class="b-dm" style="width:39%"></i></span>
+            <span class="track" style="width:49%"><i class="b-or" style="width:94.6%"></i><i class="xhatch" style="width:5.4%"></i></span>
+          </div>
+          <div class="legend"><span><i class="sw b-ch"></i>Archived channels <b>2 of 11</b></span><span><i class="sw b-dm"></i>Deactivated DMs <b>2 of 46</b></span><span><i class="sw b-or"></i>Orphaned files <b>953 of 954</b></span><span><i class="sw xhatch"></i>Failed <b>1</b></span></div>
+        </section>
+        <div class="panel" style="overflow:hidden;flex:1;min-height:0;display:flex;flex-direction:column">
+          <div class="row" style="padding:12px 16px;border-bottom:1px solid var(--line)"><b>Route</b><span class="muted">in plan order</span><span class="spacer"></span><span class="muted" style="font-size:13px">#007 · removing 57 files, then deleting the channel</span><div class="prog" style="width:160px"><i style="width:41%"></i></div></div>
+          <div class="scroll">
+          <table class="tbl">
+            <thead><tr><th style="width:64px">Plan</th><th>Item</th><th>Bin</th><th>Status</th><th class="num-r">Freed</th></tr></thead>
+            <tbody>
+              <tr><td class="plan">#001</td><td class="name">954 orphaned files</td><td><span class="bin"><span class="chip b-or"><span class="ms">link_off</span></span>Orphaned</span></td><td><span class="status"><span class="ms fill c-ok">check_circle</span>953 deleted · <span class="ms">cancel</span>1 failed</span></td><td class="num-r">1.81 GB</td></tr>
+              <tr><td class="plan">#002</td><td class="name">release-2023-q2</td><td><span class="bin"><span class="chip b-ch"><span class="ms">inventory_2</span></span>Channel</span></td><td><span class="status"><span class="ms fill c-ok">check_circle</span>Deleted</span></td><td class="num-r">612 MB</td></tr>
+              <tr><td class="plan">#003</td><td class="name">design-assets-old</td><td><span class="bin"><span class="chip b-ch"><span class="ms">inventory_2</span></span>Channel</span></td><td><span class="status"><span class="ms fill c-ok">check_circle</span>Deleted</span></td><td class="num-r">355 MB</td></tr>
+              <tr><td class="plan">#005</td><td class="name">DM with j.okafor</td><td><span class="bin"><span class="chip b-dm"><span class="ms">person_off</span></span>DM</span></td><td><span class="status"><span class="ms fill c-ok">check_circle</span>Deleted</span></td><td class="num-r">181 MB</td></tr>
+              <tr><td class="plan">#006</td><td class="name">DM with m.lindqvist</td><td><span class="bin"><span class="chip b-dm"><span class="ms">person_off</span></span>DM</span></td><td><span class="status"><span class="ms fill c-ok">check_circle</span>Deleted</span></td><td class="num-r">122 MB</td></tr>
+              <tr class="now"><td class="plan">#007</td><td class="name">incident-2022-11-db</td><td><span class="bin"><span class="chip b-ch"><span class="ms">inventory_2</span></span>Channel</span></td><td><span class="status"><span class="ms spin" style="color:var(--primary)">progress_activity</span>Deleting files 23 of 57</span></td><td class="num-r">–</td></tr>
+              <tr class="queued"><td class="plan">#008</td><td class="name">DM with a.reyes</td><td><span class="bin"><span class="chip b-dm"><span class="ms">person_off</span></span>DM</span></td><td><span class="status"><span class="ms">schedule</span>Next</span></td><td class="num-r">–</td></tr>
+            </tbody>
+          </table>
+          </div>
+          <div class="tfoot"><span class="ms" style="font-size:16px">swap_vert</span>51 more items queued after #008 · scroll for more</div>
+        </div>
+        <div class="row muted"><span class="ms" style="font-size:18px">lock</span>Navigation is locked while collecting. Closing the window stops after the current item.</div>
+      </main>
+    </div>
+  </div>
+</section>
+
+<!-- ======================================================= 4b RESULTS -->
+<section class="shot" id="results">
+  <header><h2>4b · Results</h2><p>Finished with one skip and one failure. Every problem names its plan number, the cause and the next step.</p></header>
+  <div class="window">
+    <div class="titlebar">Binday<span class="ctl"><span class="ms">remove</span><span class="ms">crop_square</span><span class="ms">close</span></span></div>
+    <div class="app">
+      <nav class="rail">
+        <div class="mark"><img src="../assets/brand/mark.svg" alt="Binday" width="52" height="52"></div>
+        <div class="steps">
+          <div class="step done"><div class="num"><span class="ms">check</span></div>Connect</div>
+          <div class="step done"><div class="num"><span class="ms">check</span></div>Scan</div>
+          <div class="step done"><div class="num"><span class="ms">check</span></div>Review</div>
+          <div class="step on"><div class="num">4</div>Collect</div>
+        </div>
+        <div class="server"><span class="dot"></span><b>prod-chat</b>connected</div>
+      </nav>
+      <main style="gap:18px">
+        <div class="row" style="align-items:flex-end">
+          <div class="head"><h3>Finished, with 2 problems</h3><p>14:41 · took 9 min 12 s · 1,009 deleted, 1 skipped, 1 failed</p></div>
+          <span class="spacer"></span>
+          <button class="btn outline"><span class="ms">description</span>Open log</button>
+          <button class="btn fill"><span class="ms">radar</span>Scan again</button>
+        </div>
+
+        <section class="panel load" aria-label="Collected load">
+          <div class="load-top"><span class="fig">3.71 GB</span><span class="muted">collected of 3.90 GB planned</span><span class="spacer"></span><span class="muted">Data directory <b style="color:var(--ink)">48.6 GB</b> <span class="ms" style="font-size:16px">arrow_forward</span> <b style="color:var(--ink)">44.9 GB</b></span></div>
+          <div class="bar">
+            <span class="track" style="width:31%"><i class="b-ch" style="width:100%"></i></span>
+            <span class="track" style="width:20%"><i class="b-dm" style="width:89.6%"></i><i class="hatch" style="width:10.4%"></i></span>
+            <span class="track" style="width:49%"><i class="b-or" style="width:94.6%"></i><i class="xhatch" style="width:5.4%"></i></span>
+          </div>
+          <div class="legend">
+            <span><i class="sw b-ch"></i>Channels <b>11</b> <span class="q">· 1.21 GB</span></span>
+            <span><i class="sw b-dm"></i>DMs <b>45</b> <span class="q">· 0.70 GB</span></span>
+            <span><i class="sw b-or"></i>Orphaned <b>953</b> <span class="q">· 1.81 GB</span></span>
+            <span><i class="sw hatch"></i>Not collected: skipped <b>1</b> <span class="q">· 81 MB</span></span>
+            <span><i class="sw xhatch"></i>Not collected: failed <b>1</b> <span class="q">· 104 MB</span></span>
+          </div>
+        </section>
+
+        <div class="row">
+          <div class="filters"><span class="fchip on">Problems 2</span><span class="fchip">Deleted 1,009</span><span class="fchip">All 1,011</span></div>
+        </div>
+
+        <div class="panel" style="overflow:hidden;display:flex;flex-direction:column">
+          <table class="tbl">
+            <thead><tr><th style="width:64px">Plan</th><th>Item</th><th>What happened</th><th>What to do</th></tr></thead>
+            <tbody>
+              <tr><td class="plan">#023</td><td class="name"><span class="bin"><span class="chip b-dm"><span class="ms">person_off</span></span>DM with t.nguyen</span></td><td><span class="status"><span class="ms">skip_next</span><b>Skipped</b>: the user was reactivated after the scan</span></td><td class="muted">Nothing. The DM was left as it was.</td></tr>
+              <tr><td class="plan">#001</td><td class="name"><span class="bin"><span class="chip b-or"><span class="ms">link_off</span></span>orphaned file 7f3a…png</span></td><td><span class="status"><span class="ms">cancel</span><b>Failed</b>: permission denied on the server</span></td><td class="muted" style="white-space:normal">Fix ownership of /opt/mattermost/data/20231014/…, then scan again.</td></tr>
+            </tbody>
+          </table>
+          <div class="tfoot"><span class="ms" style="font-size:16px">description</span>Full details for every item are in ~/.mattermost-purge/mm_purge.log</div>
+        </div>
+
+        <section class="panel" style="padding:18px 22px;display:flex;gap:16px;align-items:center">
+          <span class="ms" style="font-size:28px;color:var(--primary)">database</span>
+          <div style="flex:1"><b>The database file hasn't shrunk yet</b><div class="muted">Deleted rows free space inside PostgreSQL, but the file on disk only shrinks after VACUUM FULL. You skipped it. It locks the FileInfo table while it runs, so do it in a maintenance window.</div></div>
+          <button class="btn outline"><span class="ms">compress</span>Run VACUUM FULL…</button>
+        </section>
+      </main>
+    </div>
+  </div>
+</section>
+
+</div>
+
+<script>
+(function () {
+  const root = document.documentElement;
+  const btns = document.querySelectorAll(".seg button");
+  function set(t) { root.dataset.theme = t; btns.forEach(b => b.setAttribute("aria-pressed", b.dataset.t === t)); }
+  btns.forEach(b => b.addEventListener("click", () => set(b.dataset.t)));
+  set(new URLSearchParams(location.search).get("theme") || (matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light"));
+})();
+</script>
+</body>
+</html>

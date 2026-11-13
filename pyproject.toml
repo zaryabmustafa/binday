@@ -1,0 +1,31 @@
+[project]
+name = "binday"
+version = "1.0.0"
+description = "Binday for Mattermost: reclaim disk space on self-hosted Mattermost by safely purging archived channels, deactivated users' DMs and orphaned files."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+dependencies = [
+  "paramiko",
+  "psycopg2-binary",
+  "keyring",
+  "flet==1.1.2",
+]
+
+[project.optional-dependencies]
+dev = ["flet[all]==1.1.2"]   # flet-cli (flet build) plus the desktop and web runtimes for `python gui.py`
+
+# `flet build windows|macos|linux` reads this section. See README "Building the desktop app".
+[tool.flet]
+product = "Binday"
+org = "io.github.zaryabmustafa"
+company = "Binday contributors"
+copyright = "Copyright (C) 2026 Binday contributors. MIT License."
+
+[tool.flet.app]
+path = "."
+module = "gui"
+exclude = ["testenv", "mockup", "test_app.py", "build", "dist", "assets/brand/make_brand.py", "assets/brand/social-preview.png"]
+
+[tool.flet.linux]
+categories = ["Utility", "System"]

@@ -1,0 +1,91 @@
+# Builds the desktop app for Windows, macOS and Linux with `flet build`.
+# - Run it by hand from the Actions tab (workflow_dispatch): builds are attached to the run as artifacts.
+# - Push a tag like v1.0.0: the same builds are also published as a GitHub Release.
+name: Build desktop app
+
+on:
+  workflow_dispatch:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+env:
+  FLET_VERSION: "1.1.2"
+  APP_PYTHON: "3.13"   # Python bundled inside the app
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: windows-latest, target: windows, asset: Binday-windows-x64.zip }
+          - { os: macos-latest,   target: macos,   asset: Binday-macos.zip }
+          - { os: ubuntu-24.04,   target: linux,   asset: Binday-linux-x64.tar.gz }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install Flet CLI
+        run: python -m pip install "flet[all]==${{ env.FLET_VERSION }}"
+
+      - name: Install Linux build dependencies
+        if: matrix.target == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y binutils clang cmake lld llvm ninja-build pkg-config libgtk-3-dev \
+            libgstreamer1.0-dev libgstreamer-plugins-base1.0-dev libgstreamer-plugins-bad1.0-dev \
+            libasound2-dev libmpv-dev mpv libsecret-1-0 libsecret-1-dev libunwind-dev
+
+      - name: Version from tag
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: echo "BUILD_VERSION_ARGS=--build-version ${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+
+      - name: Build
+        shell: bash
+        run: flet build ${{ matrix.target }} --yes --no-rich-output --log-format github --python-version "$APP_PYTHON" ${BUILD_VERSION_ARGS:-}
+
+      - name: Package (Windows)
+        if: matrix.target == 'windows'
+        shell: pwsh
+        run: Compress-Archive -Path build/windows/* -DestinationPath ${{ matrix.asset }}
+
+      - name: Package (macOS)
+        if: matrix.target == 'macos'
+        run: ditto -c -k --keepParent build/macos/*.app ${{ matrix.asset }}
+
+      - name: Package (Linux)
+        if: matrix.target == 'linux'
+        run: tar -czf ${{ matrix.asset }} -C build/linux .
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.target }}
+          path: ${{ matrix.asset }}
+          if-no-files-found: error
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          merge-multiple: true
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            Binday-windows-x64.zip
+            Binday-macos.zip
+            Binday-linux-x64.tar.gz
+          generate_release_notes: true

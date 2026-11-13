@@ -68,7 +68,7 @@ jobs:
         if: matrix.target == 'linux'
         run: tar -czf ${{ matrix.asset }} -C build/linux .
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ matrix.target }}
           path: ${{ matrix.asset }}
@@ -102,7 +102,7 @@ jobs:
           --product-version "$APP_VERSION" --file-version "$APP_VERSION.0"
           --company-name "Binday contributors" --copyright "Copyright (c) 2026 Zaryab Mustafa"
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: windows-portable
           path: dist/Binday-portable.exe
@@ -115,7 +115,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v8
         with:
           merge-multiple: true
       - uses: softprops/action-gh-release@v3

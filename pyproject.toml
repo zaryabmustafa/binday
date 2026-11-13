@@ -1,6 +1,6 @@
 [project]
 name = "binday"
-version = "1.0.1"
+version = "1.0.2"
 description = "Binday for Mattermost: reclaim disk space on self-hosted Mattermost by safely purging archived channels, deactivated users' DMs and orphaned files."
 readme = "README.md"
 requires-python = ">=3.10"

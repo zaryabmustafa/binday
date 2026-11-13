@@ -23,9 +23,10 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { os: windows-latest, target: windows, asset: Binday-windows-x64.zip }
-          - { os: macos-latest,   target: macos,   asset: Binday-macos.zip }
-          - { os: ubuntu-24.04,   target: linux,   asset: Binday-linux-x64.tar.gz }
+          - { os: windows-latest, target: windows, asset: Binday-windows-x64.zip,  args: '' }
+          # Apple silicon only: a universal build compiles `cryptography` for Intel on an arm64 runner, which fails
+          - { os: macos-latest,   target: macos,   asset: Binday-macos.zip,        args: '--arch arm64' }
+          - { os: ubuntu-24.04,   target: linux,   asset: Binday-linux-x64.tar.gz, args: '' }
     steps:
       - uses: actions/checkout@v4
 
@@ -51,7 +52,7 @@ jobs:
 
       - name: Build
         shell: bash
-        run: flet build ${{ matrix.target }} --yes --no-rich-output --log-format github --python-version "$APP_PYTHON" ${BUILD_VERSION_ARGS:-}
+        run: flet build ${{ matrix.target }} ${{ matrix.args }} --yes --no-rich-output --log-format github --python-version "$APP_PYTHON" ${BUILD_VERSION_ARGS:-}
 
       - name: Package (Windows)
         if: matrix.target == 'windows'

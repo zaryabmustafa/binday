@@ -76,7 +76,7 @@ Download for your system from the [latest release](https://github.com/zaryabmust
 | System | File | How to open |
 |---|---|---|
 | Windows | `Binday-windows-x64.zip` | Unzip anywhere and run `binday.exe`. |
-| macOS | `Binday-macos.zip` | Unzip and drag **Binday** to Applications. |
+| macOS (Apple silicon) | `Binday-macos.zip` | Unzip and drag **Binday** to Applications. Intel Macs can run it from source for now. |
 | Linux | `Binday-linux-x64.tar.gz` | Extract and run `binday`. Needs GTK 3 and `libsecret` (on most desktops already). |
 
 **Binday isn't code-signed yet**, so the first launch needs one extra click:

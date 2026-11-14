@@ -1,5 +1,5 @@
-# Builds the desktop app for Windows, macOS and Linux with `flet build`, plus a single-file
-# Windows exe with `flet pack`.
+# Builds the desktop app for Windows, macOS and Linux with `flet build`, a Windows installer
+# (Inno Setup, installer/binday.iss) from the same build, plus a single-file Windows exe with `flet pack`.
 # - Run it by hand from the Actions tab (workflow_dispatch): builds are attached to the run as artifacts.
 # - Push a tag like v1.0.0: the same builds are also published as a GitHub Release.
 name: Build desktop app
@@ -59,6 +59,23 @@ jobs:
         if: matrix.target == 'windows'
         shell: pwsh
         run: Compress-Archive -Path build/windows/* -DestinationPath ${{ matrix.asset }}
+
+      - name: Installer (Windows)
+        if: matrix.target == 'windows'
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
+          $version = if ($env:GITHUB_REF -like 'refs/tags/v*') { $env:GITHUB_REF_NAME.Substring(1) } else { (Select-String -Path pyproject.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value }
+          & $iscc /Q "/DAppVersion=$version" "/DSourceDir=$PWD/build/windows" installer/binday.iss
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+      - uses: actions/upload-artifact@v7
+        if: matrix.target == 'windows'
+        with:
+          name: windows-setup
+          path: dist/Binday-setup.exe
+          if-no-files-found: error
 
       - name: Package (macOS)
         if: matrix.target == 'macos'
@@ -123,6 +140,7 @@ jobs:
           files: |
             Binday-windows-x64.zip
             Binday-portable.exe
+            Binday-setup.exe
             Binday-macos.zip
             Binday-linux-x64.tar.gz
           generate_release_notes: true

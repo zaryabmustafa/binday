@@ -60,9 +60,19 @@ The single-file `Binday-portable.exe` is built with PyInstaller through `flet pa
 
 The exe lands in `dist/`.
 
+### Windows installer
+
+`installer/binday.iss` (Inno Setup 6) wraps the `flet build windows` folder into `Binday-setup.exe`:
+
+```bash
+iscc /DAppVersion=1.1.0 /DSourceDir=build\windows installer/binday.iss
+```
+
+It installs per user by default, offers all users to admins, and its uninstaller leaves `~/.binday` alone. Keep the `AppId` GUID unchanged, or upgrades install side by side.
+
 ## Release
 
-[`.github/workflows/build.yml`](../.github/workflows/build.yml) builds Windows, macOS and Linux. Run it from the Actions tab for test builds, or push a tag such as `v1.2.0` to build all three and publish a GitHub Release with `Binday-windows-x64.zip`, `Binday-portable.exe`, `Binday-macos.zip` and `Binday-linux-x64.tar.gz`. Bump `version` in `pyproject.toml` first.
+[`.github/workflows/build.yml`](../.github/workflows/build.yml) builds Windows, macOS and Linux. Run it from the Actions tab for test builds, or push a tag such as `v1.2.0` to build all three and publish a GitHub Release with `Binday-setup.exe`, `Binday-windows-x64.zip`, `Binday-portable.exe`, `Binday-macos.zip` and `Binday-linux-x64.tar.gz`. Bump `version` in `pyproject.toml` first.
 
 ## Brand assets
 

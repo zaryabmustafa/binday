@@ -62,10 +62,10 @@ The exe lands in `dist/`.
 
 ### Windows installer
 
-`installer/binday.iss` (Inno Setup 6) wraps the `flet build windows` folder into `Binday-setup.exe`:
+`installer/binday.iss` (Inno Setup 6) wraps the `flet build windows` folder (`build\windows`, the script's default; pass `/DSourceDir=` with an absolute path for another) into `dist\Binday-setup.exe`:
 
 ```bash
-iscc /DAppVersion=1.1.0 /DSourceDir=build\windows installer/binday.iss
+iscc /DAppVersion=1.1.0 installer/binday.iss
 ```
 
 It installs per user by default, offers all users to admins, and its uninstaller leaves `~/.binday` alone. Keep the `AppId` GUID unchanged, or upgrades install side by side.

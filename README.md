@@ -83,7 +83,7 @@ Download for your system from the [latest release](https://github.com/zaryabmust
 | Linux | `Binday-linux-x64.tar.gz` | Extract and run `binday`. Needs GTK 3 and `libsecret` (on most desktops already). |
 
 **Binday isn't code-signed yet**, so the first launch needs one extra click:
-- **Windows:** SmartScreen shows "Windows protected your PC". Choose **More info**, then **Run anyway**.
+- **Windows:** SmartScreen shows "Windows protected your PC" for `Binday-setup.exe`, `Binday-portable.exe` and `binday.exe`. Choose **More info**, then **Run anyway**.
 - **macOS:** the first time, right-click the app and choose **Open**.
 
 ### First run

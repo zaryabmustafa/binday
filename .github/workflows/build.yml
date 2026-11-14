@@ -64,8 +64,10 @@ jobs:
         if: matrix.target == 'windows'
         shell: pwsh
         run: |
-          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
-          if (-not (Test-Path $iscc)) { choco install innosetup -y --no-progress; $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" }
+          function Find-Iscc { (Get-Command iscc -ErrorAction SilentlyContinue).Source ?? (Get-ChildItem "${env:ProgramFiles(x86)}\Inno Setup *\ISCC.exe", "$env:ProgramFiles\Inno Setup *\ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1).FullName }
+          $iscc = Find-Iscc
+          if (-not $iscc) { choco install innosetup -y --no-progress; $iscc = Find-Iscc }
+          if (-not $iscc) { throw "Inno Setup (ISCC.exe) not found" }
           $version = if ($env:GITHUB_REF -like 'refs/tags/v*') { $env:GITHUB_REF_NAME.Substring(1) } else { (Select-String -Path pyproject.toml -Pattern '^version = "(.+)"').Matches[0].Groups[1].Value }
           & $iscc /Q "/DAppVersion=$version" "/DSourceDir=$PWD/build/windows" installer/binday.iss
           if ($LASTEXITCODE) { exit $LASTEXITCODE }

@@ -34,7 +34,7 @@ Mattermost's data retention is an Enterprise feature, so on **Team Edition** thi
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/readme/review-dark.png">
-    <img src="assets/readme/review-light.png" alt="Binday's Review screen: 3.74 GB selected to reclaim, split into archived channels, deactivated users' DMs and orphaned files, with one channel kept" width="100%">
+    <img src="assets/readme/review-light.png" alt="Binday's Review screen: 6.09 GB selected to reclaim, split into channels, DMs, deleted messages, orphaned files, uploads, emoji and database rows, with one channel kept" width="100%">
   </picture>
 </p>
 <p align="center"><sub>Review: everything Binday found, sorted by size, split into bins. Untick anything you want to keep. Sample data.</sub></p>
@@ -55,7 +55,7 @@ Mattermost's data retention is an Enterprise feature, so on **Team Edition** thi
 <p align="center">
   <picture>
     <source media="(prefers-color-scheme: dark)" srcset="assets/readme/results-dark.png">
-    <img src="assets/readme/results-light.png" alt="Binday's Results screen: 3.66 GB collected, data directory from 48.60 GB to 44.94 GB, one skipped and one failed item with what to do" width="100%">
+    <img src="assets/readme/results-light.png" alt="Binday's Results screen: 6.01 GB collected, data directory from 48.60 GB to 42.59 GB, one skipped and one failed item with what to do" width="100%">
   </picture>
 </p>
 <p align="center"><sub>Results: what was collected, the data directory before and after, and every problem with its cause and next step. Sample data.</sub></p>

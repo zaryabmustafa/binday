@@ -400,7 +400,8 @@ class PurgeApp:
             self._fill({"ssh": "root@chat.example.org", "data_dir": "/opt/mattermost/data", "container": "mattermost",
                         "db_host": "127.0.0.1", "db_port": "5432", "db_name": "mattermost", "db_user": "mmuser",
                         "db_password": "demo-password", "ssh_password": ""})
-            self.f_profile.value = "chat.example.org"
+            self.f_profile.options = [ft.DropdownOption(key="prod-chat", text="prod-chat")]
+            self.f_profile.value = "prod-chat"
         else:
             self._refresh_profiles()
         self.paint()
@@ -449,10 +450,16 @@ class PurgeApp:
         status = []
         if self.server_name:
             status = [ft.Container(width=8, height=8, border_radius=4, bgcolor="#5FD39A" if self.server_state == "connected" else RAIL_INK),
-                      T(self.server_name, 12, ft.FontWeight.W_600, RAIL_INK, text_align=ft.TextAlign.CENTER),
+                      ft.Container(T(self.server_name, 12, ft.FontWeight.W_600, RAIL_INK, text_align=ft.TextAlign.CENTER,
+                                     max_lines=1, overflow=ft.TextOverflow.ELLIPSIS), width=88, tooltip=self.server_name),
                       T(self.server_state, 11, color=RAIL_DIM)]
         return ft.Column(horizontal_alignment=ft.CrossAxisAlignment.CENTER, spacing=4, controls=[
-            ft.Container(ft.Image(src="brand/mark-256.png", width=52, height=52, tooltip="Binday for Mattermost"),
+            ft.Container(ft.Stack(width=52, height=52, controls=[
+                ft.Image(src="brand/mark-256.png", width=52, height=52, tooltip="Binday for Mattermost"),
+                # the mark's navy tile sits on the navy rail: a hairline on the tile edge keeps its shape
+                # (tile = 13..243 of 256 px, corner radius 200/1024 of the full mark)
+                ft.Container(left=2.6, top=2.6, width=46.8, height=46.8, border_radius=10.2,
+                             border=ft.Border.all(1, ft.Colors.with_opacity(0.35, RAIL_INK)))]),
                          margin=ft.Margin.only(bottom=18)),
             *steps, ft.Container(expand=True),
             ft.Column(status, spacing=3, horizontal_alignment=ft.CrossAxisAlignment.CENTER, width=88)])
@@ -1328,6 +1335,9 @@ def main(page: ft.Page, demo: bool = False):
     logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s",
                         handlers=[logging.FileHandler(LOG_FILE, encoding="utf-8")], force=True)
     page.title = "Binday"
+    icon = Path(__file__).parent / "assets" / "icon.ico"
+    if icon.exists():  # the built app has its own icon; this covers running from source
+        page.window.icon = str(icon)
     page.fonts = {"Public Sans": FONT_FILE}
     page.theme_mode = ft.ThemeMode.SYSTEM
     page.theme = ft.Theme(color_scheme=ft.ColorScheme(**LIGHT), font_family="Public Sans", use_material3=True)
@@ -1354,7 +1364,6 @@ def _arg(name):
 def _autoplay(app, screen):
     """Demo only: walk to a screen with synthetic data, for README screenshots (`--demo --demo-screen=review`)."""
     app.f_ssh.value = "root@chat.example.org"
-    app.f_profile.value = "prod-chat"
     app._connect_worker(app._form())
     if screen == "connect":
         return

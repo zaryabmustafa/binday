@@ -52,10 +52,16 @@ def main():
             c["paths"] = paths_for(c["file_ids"])
         seed["orphan_paths"] = paths_for(seed["orphans"])
         seed["keep_paths"] = paths_for(seed["keep_files"])
+        if "deleted_post" in seed:
+            seed["deleted_paths"] = paths_for(seed["deleted_post"]["file_ids"])
         SEED.write_text(json.dumps(seed, indent=2))
 
     post = "--post" in sys.argv
     checks = []
+    keep = set(seed.get("keep_paths", []))  # files a kept row still uses (shared copies) must stay even in a purged bin
+
+    def gone(paths):
+        return [p for p in paths if p not in keep]
 
     def expect(label, actual, wanted):
         checks.append((actual == wanted, label, actual, wanted))
@@ -63,7 +69,7 @@ def main():
     for name, c in seed["channels"].items():
         target = post and c["archived"] and name not in kept
         expect(f"channel {name}: row", rows("channels", [c["id"]]), 0 if target else 1)
-        expect(f"channel {name}: files on disk", on_disk(c.get("paths", [])), 0 if target else len(c.get("paths", [])))
+        expect(f"channel {name}: files on disk", on_disk(gone(c.get("paths", []))), 0 if target else len(gone(c.get("paths", []))))
     for name, d in seed["dms"].items():
         target = post and d["target"]
         # Mattermost can't delete DM channels: the conversation stays, its posts must be gone
@@ -72,9 +78,38 @@ def main():
         expect(f"DM {name}: files on disk", on_disk(d.get("paths", [])), 0 if target else len(d.get("paths", [])))
     n = len(seed["orphans"])
     expect("orphaned FileInfo rows", rows("fileinfo", seed["orphans"]), 0 if post else n)
-    expect("orphaned files on disk", on_disk(seed.get("orphan_paths", [])), 0 if post else len(seed.get("orphan_paths", [])))
+    expect("orphaned files on disk", on_disk(gone(seed.get("orphan_paths", []))), 0 if post else len(gone(seed.get("orphan_paths", []))))
     expect("unattached upload (draft): row kept", rows("fileinfo", [seed["unattached"]]), 1)
     expect("files that must stay: on disk", on_disk(seed.get("keep_paths", [])), len(seed.get("keep_paths", [])))
+    expect("files that must stay: rows", rows("fileinfo", seed["keep_files"]), len(seed["keep_files"]))
+
+    if "deleted_post" in seed:  # the newer bins (seed.py from this version on)
+        d = seed["deleted_post"]
+        expect("deleted message: row", rows("posts", [d["post_id"]]), 0 if post else 1)
+        expect("deleted message: edit history", int(psql(f"SELECT count(*) FROM posts WHERE originalid = '{d['post_id']}'")), 0 if post else 1)
+        expect("deleted message: files on disk", on_disk(seed.get("deleted_paths", [])), 0 if post else len(seed.get("deleted_paths", [])))
+        expect("edited post: still live", int(psql(f"SELECT count(*) FROM posts WHERE id = '{seed['edited_post']['post_id']}' AND deleteat = 0")), 1)
+        up = seed["uploads"]
+        expect("abandoned upload: row", rows("uploadsessions", [up["abandoned"]["id"]]), 0 if post else 1)
+        expect("abandoned upload: file", on_disk([up["abandoned"]["path"]]), 0 if post else 1)
+        expect("in-progress upload: row and file", rows("uploadsessions", [up["in-progress"]["id"]]) + on_disk([up["in-progress"]["path"]]), 2)
+        expect("untracked old file", on_disk([seed["untracked"]["old"]]), 0 if post else 1)
+        expect("untracked fresh file (kept)", on_disk([seed["untracked"]["fresh"]]), 1)
+        expect("deleted emoji image", on_disk([seed["emoji_deleted"]]), 0 if post else 1)
+        cutoff = "(extract(epoch from now()) * 1000)::bigint - 30 * 86400000::bigint"
+        old_jobs = int(psql(f"SELECT count(*) FROM jobs WHERE createat < {cutoff} AND status NOT IN ('in_progress', 'pending')"))
+        expect("old finished jobs", min(old_jobs, 1), 0 if post else 1)
+        expect("old running job (kept)", int(psql("SELECT count(*) FROM jobs WHERE type = 'seed_running'")), 1)
+        expect("link previews (old, recent)",
+               psql("SELECT string_agg(hash::text, ',' ORDER BY hash) FROM linkmetadata WHERE hash IN (101, 102)"),
+               "102" if post else "101,102")
+        expect("lingering session of a finished upload (kept)", rows("uploadsessions", [seed["lingering_session"]]), 1)
+        if "bot_dm" in seed:
+            expect("DM with a disabled bot: messages (kept)",
+                   min(int(psql(f"SELECT count(*) FROM posts WHERE channelid = '{seed['bot_dm']['id']}' AND type = ''")), 1), 1)
+            expect("deleted message sharing a live file: row (left alone)", rows("posts", [seed["shared_deleted"]["post_id"]]), 1)
+        avatars = sh("docker", "exec", "mm-purge-test-server-1", "sh", "-c", f"ls {DATA}/users/*/profile.png | wc -l").stdout.strip()
+        expect("profile images untouched", int(avatars or 0) > 0, True)
 
     for ok, label, actual, wanted in checks:
         print(f"{'PASS' if ok else 'FAIL'}  {label}: {actual} (expected {wanted})")

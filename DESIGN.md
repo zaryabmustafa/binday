@@ -290,7 +290,10 @@ A quiet navy-and-ink ground, Mattermost blue for interaction, three municipal bi
 ### Secondary (the bins)
 - **Teal** (bin-teal): archived channels. (Not blue: blue belongs to interaction.)
 - **Collection Yellow** (bin-collection-yellow): deactivated users' DMs. Identical in both themes; always paired with its dark on-colour, never white.
-- **Earth Brown** (bin-earth-brown): orphaned files.
+- **Earth Brown** (bin-earth-brown): everything left behind: deleted messages, orphaned files, abandoned uploads, untracked files and deleted emoji images. They are told apart by pictogram (`speaker_notes_off`, `link_off`, `cloud_off`, `find_in_page`, `emoji_emotions`), never by a new hue.
+- **Database grey** (ink-2 chip on surface): the three database tidies (edit history `history`, old job records `work_history`, link preview cache `link`). They free no disk until VACUUM, so they have no load-bar segment; Review shows them as one "Database rows" legend entry with an "≈ … after VACUUM" estimate.
+
+Scan groups the ten bins under three section bands: Conversations, Leftover files, Database tidy. Review filters by the same groups (Channels, DMs, Leftovers, Database), and every bin except channels and DMs is one all-or-nothing row.
 
 Each bin has a paired on-colour for the pictogram inside its chip.
 

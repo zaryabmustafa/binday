@@ -11,16 +11,28 @@ Item kinds:
   channel - archived channel     -> `mmctl channel delete`, then remove its files
   dm      - deactivated user's DM -> `mmctl post delete --permanent` for every post, then remove leftover files
             (Mattermost refuses to delete DM channels, so the empty conversation stays)
-  orphan  - FileInfo row whose post is gone -> delete files, then the FileInfo row
+  deleted - message a user deleted (Mattermost only marks it) -> `mmctl post delete --permanent`
+            (Mattermost removes its files and FileInfo rows itself)
+  orphan  - FileInfo row whose post is gone, or an attachment removed by an edit that no
+            version of the message still uses -> delete files, then the FileInfo row
+  upload  - resumable upload untouched for a week -> delete the partial file and its UploadSessions row
+  untracked - file in an attachment folder that no FileInfo or upload row points at -> delete it
+  emoji   - image Mattermost kept (renamed image_deleted) when a custom emoji was deleted -> delete it
+Database tidy (no files; the space comes back with VACUUM):
+  history - old versions of edited messages (Posts rows with an OriginalId)
+  jobs    - finished Jobs rows older than 30 days (the same query as Mattermost's own, off-by-default, cleanup)
+  links   - link-preview cache (LinkMetadata) for messages older than 30 days; Mattermost refetches on a miss
 """
 
 import argparse
 import json
 import logging
+import posixpath
 import shlex
 import socket
 import sys
 import threading
+import time
 from dataclasses import dataclass, field
 from typing import Callable, Dict, List, Optional, Sequence, Set
 
@@ -30,8 +42,32 @@ import psycopg2.extensions
 
 logger = logging.getLogger("binday")
 
-KINDS = ("channel", "dm", "orphan")
-KIND_LABELS = {"channel": "Archived channel", "dm": "Deactivated user DM", "orphan": "Orphaned file"}
+KINDS = ("channel", "dm", "deleted", "orphan", "upload", "untracked", "emoji", "history", "jobs", "links")
+KIND_LABELS = {"channel": "Archived channel", "dm": "Deactivated user DM", "deleted": "Deleted message",
+               "orphan": "Orphaned file", "upload": "Abandoned upload", "untracked": "Untracked file",
+               "emoji": "Deleted emoji image", "history": "Edit history", "jobs": "Old job records",
+               "links": "Link preview cache"}
+TIDY = {"history", "jobs", "links"}  # database rows only, no files
+DAY_MS = 86_400_000
+STALE_MS = DAY_MS        # untracked files younger than this may still be in flight
+UPLOAD_STALE_MS = 7 * DAY_MS  # upload sessions never expire, so a paused upload may resume days later
+KEEP_MS = 30 * DAY_MS    # job records and link previews newer than this are kept
+OPTIONAL_TABLES = ("uploadsessions", "emoji", "jobs", "linkmetadata", "bots")
+
+
+def _now_ms(sess=None) -> int:
+    """Now in ms by the database server's clock (the one that wrote CreateAt/DeleteAt), so a workstation
+    with a wrong clock can't shrink the age guards. Falls back to this machine's clock without a database."""
+    cur = getattr(sess, "cur", None)
+    if cur is not None:
+        try:
+            cur.execute("SELECT (extract(epoch from clock_timestamp()) * 1000)::bigint")
+            row = cur.fetchone()
+            if row and isinstance(row[0], int):
+                return row[0]
+        except Exception:
+            pass
+    return int(time.time() * 1000)
 
 
 def format_bytes(size: float) -> str:
@@ -109,6 +145,7 @@ class Session:
         self.s = settings
         self.errors: List[str] = []
         self.ssh = self.sftp = self.conn = self.cur = self._tunnel = None
+        self._local: Optional[bool] = None
         self._cols: Dict[str, List[str]] = {}
         try:
             if "ssh" in parts or "mmctl" in parts or ("db" in parts and settings.db_via_ssh):
@@ -164,14 +201,30 @@ class Session:
     def run(self, cmd: Sequence[str], allow_fail: bool = False) -> str:
         full = shlex.join(cmd)
         _, stdout, stderr = self.ssh.exec_command(full)
+        # read before waiting: a command whose output outgrows the SSH window would otherwise block forever
+        out, err = stdout.read().decode(errors="replace").strip(), stderr.read().decode(errors="replace").strip()
         status = stdout.channel.recv_exit_status()
-        out, err = stdout.read().decode().strip(), stderr.read().decode().strip()
         if status != 0 and not allow_fail:
             raise RuntimeError(f"Remote command failed ({status}): {full}\nSTDERR: {err}")
         return out
 
+    @property
+    def local(self) -> bool:
+        """Whether mmctl's local mode works in the container (the server's EnableLocalMode and its socket).
+        Tried once with a real call, then every mmctl command uses it: local mode needs no login and
+        skips the API's EnableAPIChannelDeletion/EnableAPIPostDeletion checks."""
+        if self._local is None:
+            try:
+                self.run(["docker", "exec", "-i", self.s.container, "mmctl", "--local",
+                          "config", "get", "ServiceSettings.EnableLocalMode", "--json"])
+                self._local = True
+            except Exception:
+                self._local = False
+        return self._local
+
     def mmctl(self, *args: str, allow_fail: bool = False) -> str:
-        return self.run(["docker", "exec", "-i", self.s.container, "mmctl", *args], allow_fail=allow_fail)
+        local = ["--local"] if args[:2] != ("auth", "login") and self.local else []
+        return self.run(["docker", "exec", "-i", self.s.container, "mmctl", *local, *args], allow_fail=allow_fail)
 
     def q(self, table: str) -> str:
         """Quoted schema.table for a logical table name (fileinfo/posts/channels/users)."""
@@ -201,14 +254,16 @@ class Session:
 def detect_mm_tables(cur):
     wanted = {"fileinfo", "posts", "channels", "users"}
     cur.execute("SELECT table_schema, table_name FROM information_schema.tables "
-                "WHERE table_type='BASE TABLE' AND lower(table_name) IN ('fileinfo','posts','channels','users')")
+                "WHERE table_type='BASE TABLE' AND lower(table_name) IN %s", (tuple(wanted) + OPTIONAL_TABLES,))
     by_schema: Dict[str, Dict[str, str]] = {}
     for schema, name in cur.fetchall():
         by_schema.setdefault(schema, {})[name.lower()] = name
     candidates = [sch for sch, t in by_schema.items() if wanted.issubset(t)]
     if not candidates:
         raise RuntimeError("Could not find Mattermost tables (FileInfo, Posts, Channels, Users).")
-    schema = "public" if "public" in candidates else candidates[0]
+    cur.execute("SELECT current_schema()")
+    current = (cur.fetchone() or [None])[0]
+    schema = current if current in candidates else ("public" if "public" in candidates else sorted(candidates)[0])
     return schema, by_schema[schema]
 
 
@@ -303,6 +358,9 @@ def test_mmctl(s: Settings) -> List[tuple]:
         enabled = channel_deletion_enabled(sess)
         rows.append((True, "Channel deletion is on", "EnableAPIChannelDeletion = true") if enabled else
                     (None, "Channel deletion is off", "Archived channels can be scanned but not deleted"))
+        problem = post_deletion_problem(sess)
+        if problem:
+            rows.append((None, POST_DELETION_TITLE, problem))
     finally:
         sess.close()
     return rows
@@ -311,7 +369,25 @@ def test_mmctl(s: Settings) -> List[tuple]:
 # --------------------------------------------------------------------------- mmctl queries
 
 def channel_deletion_enabled(sess: Session) -> Optional[bool]:
-    key = "ServiceSettings.EnableAPIChannelDeletion"
+    if sess.local:  # local mode skips the API's EnableAPIChannelDeletion check
+        return True
+    return config_enabled(sess, "ServiceSettings.EnableAPIChannelDeletion")
+
+
+POST_DELETION_TITLE = "Permanent post deletion unavailable"
+
+
+def post_deletion_problem(sess: Session) -> Optional[str]:
+    """Why deleted messages and DMs can't be purged, or None if they can. `mmctl post delete --permanent`
+    only exists from Mattermost 10.2; through the API it also needs EnableAPIPostDeletion (local mode skips that)."""
+    if "--permanent" not in sess.mmctl("post", "delete", "--help", allow_fail=True):
+        return "This server's mmctl can't delete posts permanently (Mattermost 10.2 or later is needed)"
+    if sess.local or config_enabled(sess, "ServiceSettings.EnableAPIPostDeletion"):
+        return None
+    return "Deleted messages and DMs need ServiceSettings.EnableAPIPostDeletion = true (or mmctl local mode)"
+
+
+def config_enabled(sess: Session, key: str) -> Optional[bool]:
     out = sess.mmctl("config", "get", key, "--json", allow_fail=True).strip()
     for line in [out] + list(reversed(out.splitlines())):
         line = line.strip()
@@ -364,8 +440,12 @@ def channel_file_paths(sess: Session, channel_id: str) -> List[str]:
 
 def deactivated_user_dms(sess: Session) -> List[Dict]:
     u, c = "users", "channels"
-    sess.cur.execute(f"SELECT {sess.col(u, 'Id')}, {sess.col(u, 'Username')} FROM {sess.q(u)} "
-                     f"WHERE {sess.col(u, 'DeleteAt')} > 0")
+    # Disabled bots are deactivated users too (Mattermost disables a deactivated owner's bots), but their DMs
+    # are integration history people still use, and the bot comes back when re-enabled: never in this bin.
+    not_bot = (f" AND NOT EXISTS (SELECT 1 FROM {sess.q('bots')} b WHERE b.{sess.col('bots', 'UserId')} = us.{sess.col(u, 'Id')})"
+               if "bots" in sess.t else "")
+    sess.cur.execute(f"SELECT us.{sess.col(u, 'Id')}, us.{sess.col(u, 'Username')} FROM {sess.q(u)} us "
+                     f"WHERE us.{sess.col(u, 'DeleteAt')} > 0{not_bot}")
     dms: Dict[str, Dict] = {}
     for user_id, username in sess.cur.fetchall():
         # DM channel names are "<userA>__<userB>"
@@ -384,16 +464,32 @@ def deactivated_user_dms(sess: Session) -> List[Dict]:
 
 def channel_post_ids(sess: Session, channel_id: str) -> List[str]:
     p = "posts"
-    sess.cur.execute(f"SELECT {sess.col(p, 'Id')} FROM {sess.q(p)} WHERE {sess.col(p, 'ChannelId')} = %s", (channel_id,))
+    # Replies first: permanently deleting a thread root also drops its replies' rows but not their files.
+    sess.cur.execute(f"SELECT {sess.col(p, 'Id')} FROM {sess.q(p)} WHERE {sess.col(p, 'ChannelId')} = %s "
+                     f"ORDER BY {sess.col(p, 'RootId')} = '' , {sess.col(p, 'CreateAt')}", (channel_id,))
     return [r[0] for r in sess.cur.fetchall()]
+
+
+def channel_has_posts(sess: Session, channel_id: str) -> bool:
+    p = "posts"
+    sess.cur.execute(f"SELECT EXISTS (SELECT 1 FROM {sess.q(p)} WHERE {sess.col(p, 'ChannelId')} = %s)", (channel_id,))
+    return bool(sess.cur.fetchone()[0])
 
 
 def _orphan_sql(sess: Session) -> str:
     f, p = "fileinfo", "posts"
-    pid = sess.col(f, "PostId")
+    pid, pq, pcol = sess.col(f, "PostId"), sess.q(p), lambda c: sess.col(p, c)
+    fid = f"fi.{sess.col(f, 'Id')}"
     # Empty/NULL PostId = uploaded but not yet attached to a post (e.g. a draft); not an orphan.
-    return (f"fi.{pid} IS NOT NULL AND fi.{pid} <> '' AND NOT EXISTS "
-            f"(SELECT 1 FROM {sess.q(p)} p WHERE p.{sess.col(p, 'Id')} = fi.{pid})")
+    # An attachment removed by an edit is only marked deleted, and restoring an older version of the
+    # message brings it back, so it counts only once no version (live or history) lists it any more.
+    return (f"fi.{pid} IS NOT NULL AND fi.{pid} <> '' AND ("
+            f"NOT EXISTS (SELECT 1 FROM {pq} p WHERE p.{pcol('Id')} = fi.{pid}) OR ("
+            f"fi.{sess.col(f, 'DeleteAt')} > 0 "
+            f"AND EXISTS (SELECT 1 FROM {pq} p WHERE p.{pcol('Id')} = fi.{pid} AND p.{pcol('DeleteAt')} = 0 "
+            f"AND position({fid} in p.{pcol('FileIds')}) = 0) "
+            f"AND NOT EXISTS (SELECT 1 FROM {pq} h WHERE h.{pcol('OriginalId')} = fi.{pid} "
+            f"AND position({fid} in h.{pcol('FileIds')}) > 0)))")
 
 
 def db_orphans(sess: Session) -> List[Dict]:
@@ -403,6 +499,172 @@ def db_orphans(sess: Session) -> List[Dict]:
         f"fi.{sess.col(f, 'ThumbnailPath')}, fi.{sess.col(f, 'PreviewPath')} "
         f"FROM {sess.q(f)} fi WHERE {_orphan_sql(sess)}")
     return [{"id": r[0], "name": r[1], "paths": [x for x in r[2:] if x]} for r in sess.cur.fetchall()]
+
+
+def _deleted_post_sql(sess: Session) -> str:
+    p = "posts"
+    # Content flagging and burn-on-read keep a scrubbed, deleted stub on purpose (audit trail): leave those.
+    return (f"p.{sess.col(p, 'DeleteAt')} > 0 AND coalesce(p.{sess.col(p, 'OriginalId')}, '') = '' "
+            f"AND p.{sess.col(p, 'Message')} NOT LIKE '*Content deleted as part of%%'")
+
+
+def deleted_posts(sess: Session) -> List[Dict]:
+    """Messages users deleted (Mattermost keeps the row and every file). Not edit-history rows.
+    Replies come before roots, so a root's permanent delete never takes a reply's row first."""
+    p, f, c = "posts", "fileinfo", "channels"
+    sess.cur.execute(
+        f"SELECT p.{sess.col(p, 'Id')}, p.{sess.col(p, 'ChannelId')}, coalesce(ch.{sess.col(c, 'DisplayName')}, ''), "
+        f"fi.{sess.col(f, 'Path')}, fi.{sess.col(f, 'ThumbnailPath')}, fi.{sess.col(f, 'PreviewPath')} "
+        f"FROM {sess.q(p)} p LEFT JOIN {sess.q(f)} fi ON fi.{sess.col(f, 'PostId')} = p.{sess.col(p, 'Id')} "
+        f"LEFT JOIN {sess.q(c)} ch ON ch.{sess.col(c, 'Id')} = p.{sess.col(p, 'ChannelId')} "
+        f"WHERE {_deleted_post_sql(sess)} "
+        f"ORDER BY p.{sess.col(p, 'RootId')} = '', p.{sess.col(p, 'CreateAt')}")
+    posts: Dict[str, Dict] = {}
+    for post_id, channel_id, channel, *paths in sess.cur.fetchall():
+        it = posts.setdefault(post_id, {"id": post_id, "channel_id": channel_id, "channel": channel or "Direct message", "paths": []})
+        it["paths"] += [x for x in paths if x]
+    return list(posts.values())
+
+
+def _abandoned_sql(sess: Session) -> str:
+    """An attachment upload session, untouched for a week, whose file never became an attachment.
+    (When an upload finishes Mattermost saves the FileInfo, then deletes the session; if that delete
+    fails the session stays behind, pointing at a live file.)"""
+    u, f = "uploadsessions", "fileinfo"
+    return (f"us.{sess.col(u, 'Type')} = 'attachment' AND us.{sess.col(u, 'CreateAt')} < %s "
+            f"AND NOT EXISTS (SELECT 1 FROM {sess.q(f)} fi WHERE fi.{sess.col(f, 'Path')} = us.{sess.col(u, 'Path')})")
+
+
+def abandoned_uploads(sess: Session) -> List[Dict]:
+    """Resumable attachment uploads never finished; Mattermost never removes these."""
+    if "uploadsessions" not in sess.t:
+        return []
+    u = "uploadsessions"
+    now = _now_ms(sess)  # before the SELECT: it runs its own query on the shared cursor
+    sess.cur.execute(f"SELECT {sess.col(u, 'Id')}, {sess.col(u, 'Filename')}, {sess.col(u, 'Path')} FROM {sess.q(u)} us "
+                     f"WHERE {_abandoned_sql(sess)}", (now - UPLOAD_STALE_MS,))
+    rows, out, cutoff = sess.cur.fetchall(), [], (now - UPLOAD_STALE_MS) / 1000
+    for upload_id, name, path in rows:
+        if path and _upload_idle(sess, path, cutoff):
+            # incomplete parts may be written as <path>.tmp (model.IncompleteUploadSuffix): use whichever exists
+            on_disk = list(existing_sizes(sess, [path, path + ".tmp"])) or [path]
+            out.append({"id": upload_id, "name": name, "paths": on_disk})
+    return out
+
+
+def _upload_idle(sess: Session, path: str, cutoff_s: float) -> bool:
+    """UploadSessions has no update time, only CreateAt: a resumed upload is only idle if its partial
+    file hasn't been written to since the cutoff either."""
+    for candidate in (path, path + ".tmp"):
+        try:
+            if (sess.sftp.stat(_remote(sess, candidate)).st_mtime or 0) >= cutoff_s:
+                return False
+        except IOError:
+            pass
+    return True
+
+
+def _path_known(sess: Session, path: str) -> bool:
+    f = "fileinfo"
+    sess.cur.execute(f"SELECT 1 FROM {sess.q(f)} WHERE {sess.col(f, 'Path')} = %s OR {sess.col(f, 'ThumbnailPath')} = %s "
+                     f"OR {sess.col(f, 'PreviewPath')} = %s LIMIT 1", (path, path, path))
+    if sess.cur.fetchone():
+        return True
+    if "uploadsessions" in sess.t:
+        u = "uploadsessions"
+        bare = path[:-4] if path.endswith(".tmp") else path
+        sess.cur.execute(f"SELECT 1 FROM {sess.q(u)} WHERE {sess.col(u, 'Path')} = %s LIMIT 1", (bare,))
+        return sess.cur.fetchone() is not None
+    return False
+
+
+def _known_paths(sess: Session) -> Set[str]:
+    f = "fileinfo"
+    sess.cur.execute(f"SELECT {sess.col(f, 'Path')}, {sess.col(f, 'ThumbnailPath')}, {sess.col(f, 'PreviewPath')} FROM {sess.q(f)}")
+    known = {x for row in sess.cur.fetchall() for x in row if x}
+    if "uploadsessions" in sess.t:
+        u = "uploadsessions"
+        sess.cur.execute(f"SELECT {sess.col(u, 'Path')} FROM {sess.q(u)}")
+        for (path,) in sess.cur.fetchall():
+            if path:
+                known |= {path, path + ".tmp"}
+    return known
+
+
+def untracked_files(sess: Session, progress: Callable[[str], None]) -> List[Dict]:
+    """Files in the dated attachment folders (YYYYMMDD/...) that no FileInfo or UploadSessions row
+    points at, untouched for a day. Other top-level folders (users, teams, brand, emoji, plugins,
+    bookmark, export, import) belong to Mattermost and are never looked at."""
+    import stat as st
+    known, cutoff, out = _known_paths(sess), (_now_ms(sess) - STALE_MS) / 1000, []
+    root = sess.s.remote_data_dir.rstrip("/")
+    seen = [0, 0]  # files walked, files a database row points at
+
+    def walk(rel):
+        for a in sess.sftp.listdir_attr(f"{root}/{rel}"):
+            child = f"{rel}/{a.filename}"
+            if st.S_ISDIR(a.st_mode):
+                walk(child)
+            elif st.S_ISREG(a.st_mode):
+                seen[0] += 1
+                if child in known:
+                    seen[1] += 1
+                elif (a.st_mtime or 0) < cutoff:
+                    out.append({"id": child, "name": a.filename, "paths": [child], "size": a.st_size})
+
+    for a in sorted(sess.sftp.listdir_attr(root), key=lambda a: a.filename):
+        if st.S_ISDIR(a.st_mode) and len(a.filename) == 8 and a.filename.isdigit():
+            progress(f"Checking {a.filename}/ for untracked files...")
+            walk(a.filename)
+    check_untracked_sane(*seen, len(out))
+    return out
+
+
+def check_untracked_sane(walked: int, matched: int, untracked: int) -> None:
+    """Refuse when most attachment files look untracked: that means the database paths and the
+    data directory don't line up (wrong folder, different layout), not that the files are junk."""
+    # ponytail: fixed 50% / 20-file threshold; make it a setting if a real server trips it legitimately
+    if walked >= 20 and untracked > walked // 2:
+        raise RuntimeError(f"{untracked:,} of {walked:,} attachment files look untracked ({matched:,} match the database). "
+                           "The data directory may not be the one Mattermost uses; untracked files were not collected.")
+
+
+def deleted_emoji_images(sess: Session) -> List[Dict]:
+    if "emoji" not in sess.t:
+        return []
+    e = "emoji"
+    sess.cur.execute(f"SELECT {sess.col(e, 'Id')}, {sess.col(e, 'Name')} FROM {sess.q(e)} WHERE {sess.col(e, 'DeleteAt')} > 0")
+    return [{"id": r[0], "name": r[1], "paths": [f"emoji/{r[0]}/image_deleted"]} for r in sess.cur.fetchall()]
+
+
+def _tidy_where(sess: Session, kind: str, now: int):
+    """(logical table, WHERE clause, params) for a database-tidy kind, fixed at scan time `now`."""
+    if kind == "history":
+        p = "posts"
+        return p, (f"coalesce({sess.col(p, 'OriginalId')}, '') <> '' AND {sess.col(p, 'DeleteAt')} > 0 "
+                   f"AND {sess.col(p, 'DeleteAt')} <= %s"), (now,)
+    if kind == "jobs":  # Mattermost's own SqlJobStore.Cleanup query
+        j = "jobs"
+        return j, f"{sess.col(j, 'CreateAt')} < %s AND {sess.col(j, 'Status')} NOT IN ('in_progress', 'pending')", (now - KEEP_MS,)
+    lm = "linkmetadata"
+    return lm, f"{sess.col(lm, 'Timestamp')} < %s", (now - KEEP_MS,)
+
+
+def tidy_item(sess: Session, kind: str) -> Optional[Dict]:
+    """One plan item per database tidy: how many rows, and roughly how much table space they hold."""
+    now = _now_ms(sess)
+    table, where, params = _tidy_where(sess, kind, now)
+    if table not in sess.t:
+        return None
+    sess.cur.execute(f"SELECT count(*) FROM {sess.q(table)} WHERE {where}", params)
+    rows = sess.cur.fetchone()[0]
+    if not rows:
+        return None
+    sess.cur.execute("SELECT pg_total_relation_size(oid), reltuples::bigint FROM pg_class WHERE oid = %s::regclass", (sess.q(table),))
+    size, total = sess.cur.fetchone()
+    total = max(total, rows)  # reltuples is an estimate (-1 before the first ANALYZE)
+    return {"kind": kind, "id": kind, "label": f"{rows:,} rows", "group": f"{sess.t[table]} table", "paths": [],
+            "bytes": 0, "db_bytes": int(size * rows / total), "missing": 0, "rows": rows, "at": now}
 
 
 def still_eligible(sess: Session, item: Dict) -> bool:
@@ -418,6 +680,36 @@ def still_eligible(sess: Session, item: Dict) -> bool:
             f"SELECT 1 FROM {sess.q(c)} ch, {sess.q(u)} us WHERE ch.{sess.col(c, 'Id')} = %s "
             f"AND us.{sess.col(u, 'Id')} = %s AND us.{sess.col(u, 'DeleteAt')} > 0", (item["id"], item["user_id"]))
         return sess.cur.fetchone() is not None
+    kind = item["kind"]
+    if kind == "deleted":
+        sess.cur.execute(f"SELECT 1 FROM {sess.q('posts')} p WHERE p.{sess.col('posts', 'Id')} = %s AND {_deleted_post_sql(sess)}",
+                         (item["id"],))
+        return sess.cur.fetchone() is not None
+    if kind == "upload":
+        u = "uploadsessions"
+        now = _now_ms(sess)
+        sess.cur.execute(f"SELECT 1 FROM {sess.q(u)} us WHERE us.{sess.col(u, 'Id')} = %s AND {_abandoned_sql(sess)}",
+                         (item["id"], now - UPLOAD_STALE_MS))
+        return sess.cur.fetchone() is not None and all(_upload_idle(sess, p, (now - UPLOAD_STALE_MS) / 1000)
+                                                       for p in item["paths"] if not p.endswith(".tmp"))
+    if kind == "untracked":
+        if _path_known(sess, item["id"]):
+            return False
+        try:
+            return (sess.sftp.stat(_remote(sess, item["id"])).st_mtime or 0) < (_now_ms(sess) - STALE_MS) / 1000
+        except IOError:
+            return False
+    if kind == "emoji":
+        e = "emoji"
+        sess.cur.execute(f"SELECT 1 FROM {sess.q(e)} WHERE {sess.col(e, 'Id')} = %s AND {sess.col(e, 'DeleteAt')} > 0", (item["id"],))
+        return sess.cur.fetchone() is not None
+    if kind in TIDY:
+        table, where, params = _tidy_where(sess, kind, item["at"])
+        if table not in sess.t:
+            return False
+        sess.cur.execute(f"SELECT count(*) FROM {sess.q(table)} WHERE {where}", params)
+        row = sess.cur.fetchone()
+        return bool(row) and row[0] <= item.get("rows", 0)
     sess.cur.execute(f"SELECT 1 FROM {sess.q(f)} fi WHERE fi.{sess.col(f, 'Id')} = %s AND {_orphan_sql(sess)}",
                      (item["id"],))
     return sess.cur.fetchone() is not None
@@ -426,7 +718,12 @@ def still_eligible(sess: Session, item: Dict) -> bool:
 # --------------------------------------------------------------------------- files
 
 def _remote(sess: Session, rel: str) -> str:
-    return sess.s.remote_data_dir.rstrip("/") + "/" + rel.lstrip("/")
+    """Absolute path of a data-directory-relative path. Refuses (IOError, so callers treat it as missing)
+    anything that would leave the data directory, such as '../' in a path from the database."""
+    clean = posixpath.normpath(rel.lstrip("/"))
+    if clean in ("", ".") or clean == ".." or clean.startswith("../"):
+        raise IOError(f"Refusing a path outside the data directory: {rel!r}")
+    return sess.s.remote_data_dir.rstrip("/") + "/" + clean
 
 
 def measure_files(sess: Session, paths: List[str]):
@@ -451,12 +748,46 @@ def existing_sizes(sess: Session, paths: List[str]) -> Dict[str, int]:
     return out
 
 
+def _paths_in_use(sess: Session, paths: List[str], own_posts_sql: str = "", own_params=()) -> Set[str]:
+    """Which of these paths a FileInfo row that isn't an orphan still points at. Mattermost's CopyFileInfos
+    (used by plugins) gives a copy a new id but the same files, so a path can belong to more than one row.
+    own_posts_sql (a SELECT of post ids) leaves out the rows of the item being deleted."""
+    if not paths or getattr(sess, "cur", None) is None or "fileinfo" not in getattr(sess, "t", {}):
+        return set()
+    f = "fileinfo"
+    cols = [sess.col(f, c) for c in ("Path", "ThumbnailPath", "PreviewPath")]
+    own = f" AND fi.{sess.col(f, 'PostId')} NOT IN ({own_posts_sql})" if own_posts_sql else ""
+    sess.cur.execute(f"SELECT {', '.join('fi.' + c for c in cols)} FROM {sess.q(f)} fi "
+                     f"WHERE ({' OR '.join(f'fi.{c} = ANY(%s)' for c in cols)}) AND NOT ({_orphan_sql(sess)}){own}",
+                     (list(paths),) * 3 + tuple(own_params))
+    return {p for row in sess.cur.fetchall() for p in row if p in paths}
+
+
+def _shares_files(sess: Session, it: Dict) -> bool:
+    """Would Mattermost's own permanent delete of this deleted message / DM remove a file another live record
+    still uses? Mattermost's RemoveFilesFromFileStore doesn't check, so Binday leaves such an item alone."""
+    p = "posts"
+    if it["kind"] == "deleted":
+        own, params = "%s", (it["id"],)
+    else:
+        own, params = f"SELECT {sess.col(p, 'Id')} FROM {sess.q(p)} WHERE {sess.col(p, 'ChannelId')} = %s", (it["id"],)
+    return bool(_paths_in_use(sess, it["paths"], own, params))
+
+
+SHARED_FILES = "Kept: another message still uses its files, and Mattermost's delete would remove them"
+
+
 def delete_files(sess: Session, paths: List[str]) -> int:
-    """Delete files; returns bytes freed. Missing files are ignored, other failures recorded."""
+    """Delete files; returns bytes freed. Missing files are ignored, other failures recorded.
+    A file another live FileInfo row still uses is left in place."""
     freed = 0
+    in_use = _paths_in_use(sess, paths)
     for rel in paths:
-        full = _remote(sess, rel)
+        if rel in in_use:
+            logger.warning(f"Kept {rel}: another file record still uses it")
+            continue
         try:
+            full = _remote(sess, rel)
             size = sess.sftp.stat(full).st_size
         except IOError:
             continue
@@ -475,15 +806,16 @@ def scan(sess: Session, kinds: Set[str], progress: Callable[[str], None] = lambd
     """Dry run. Returns plan items: {kind, id, label, group, paths, bytes, missing, [user_id]}.
     on_item(item) is called as each item is measured. Raise from progress/on_item to stop early."""
     items: List[Dict] = []
+    covered: Set[str] = set()  # channel ids whose posts are already in the plan
 
-    def full() -> bool:
-        return bool(limit) and len(items) >= limit
+    def full() -> bool:  # --limit counts what will run: deleted messages riding with their channel don't count
+        return bool(limit) and sum(1 for it in items if not it.get("inside")) >= limit
 
-    def add(kind, item_id, label, group, paths, **extra):
-        size, missing = measure_files(sess, paths)
+    def add(kind, item_id, label, group, paths, size=None, **extra):
+        size, missing = (size, 0) if size is not None else measure_files(sess, paths)
         items.append({"kind": kind, "id": item_id, "label": label, "group": group, "paths": paths,
                       "bytes": size, "missing": missing, **extra})
-        if on_item:
+        if on_item and not extra.get("inside"):
             on_item(items[-1])
 
     if "channel" in kinds:
@@ -494,14 +826,26 @@ def scan(sess: Session, kinds: Set[str], progress: Callable[[str], None] = lambd
                 label = ch.get("display_name") or ch.get("name") or ch["id"]
                 progress(f"Archived channel {team}: {label}")
                 add("channel", ch["id"], label, team, channel_file_paths(sess, ch["id"]))
+                covered.add(ch["id"])
 
     if "dm" in kinds and not full():
         progress("Finding DMs of deactivated users...")
         for dm in deactivated_user_dms(sess):
             if full(): break
+            if not channel_has_posts(sess, dm["id"]):
+                continue  # already emptied: Mattermost keeps the empty DM channel, nothing left to collect
             label = f"DM {dm['username']} & {dm['other']}" if dm["other"] != dm["username"] else f"DM {dm['username']} (self)"
             progress(label)
             add("dm", dm["id"], label, "Direct messages", channel_file_paths(sess, dm["id"]), user_id=dm["user_id"])
+            covered.add(dm["id"])
+
+    if "deleted" in kinds and not full():
+        progress("Finding deleted messages...")
+        for d in deleted_posts(sess):
+            if full(): break
+            # Inside a channel or DM in the plan: deleted with it, unless that row is kept (see collectable())
+            add("deleted", d["id"], f"in {d['channel']}", "Deleted messages", d["paths"], channel_id=d["channel_id"],
+                **({"inside": d["channel_id"]} if d["channel_id"] in covered else {}))
 
     if "orphan" in kinds and not full():
         progress("Finding orphaned files...")
@@ -509,8 +853,48 @@ def scan(sess: Session, kinds: Set[str], progress: Callable[[str], None] = lambd
             if full(): break
             add("orphan", o["id"], o["name"] or o["id"], "Orphaned files", o["paths"])
 
+    if "upload" in kinds and not full():
+        progress("Finding abandoned uploads...")
+        for u in abandoned_uploads(sess):
+            if full(): break
+            add("upload", u["id"], u["name"] or u["id"], "Abandoned uploads", u["paths"])
+
+    if "untracked" in kinds and not full():
+        progress("Finding untracked files...")
+        try:
+            found = untracked_files(sess, progress)
+        except RuntimeError as e:  # the sanity check refused: report it, keep the rest of the scan
+            sess.error(str(e))
+            found = []
+        for u in found:
+            if full(): break
+            add("untracked", u["id"], u["name"], "Untracked files", u["paths"], size=u["size"])
+
+    if "emoji" in kinds and not full():
+        progress("Finding deleted emoji images...")
+        for e in deleted_emoji_images(sess):
+            if full(): break
+            size, missing = measure_files(sess, e["paths"])
+            if size:  # only deletions that left an image behind
+                add("emoji", e["id"], f":{e['name']}:", "Deleted emoji", e["paths"], size=size)
+
+    for kind in ("history", "jobs", "links"):
+        if kind in kinds and not full():
+            progress(f"Counting {KIND_LABELS[kind].lower()}...")
+            it = tidy_item(sess, kind)
+            if it:
+                items.append(it)
+                if on_item:
+                    on_item(it)
+
     progress(f"Scan complete: {len(items)} items.")
     return items
+
+
+def collectable(items: List[Dict], kept_ids: Set[str] = frozenset()) -> List[Dict]:
+    """The plan apply() should run: deleted messages inside a channel or DM in the plan go with it,
+    unless that channel/DM is kept (kept_ids), in which case they're collected on their own."""
+    return [it for it in items if not it.get("inside") or it["inside"] in kept_ids]
 
 
 def apply(sess: Session, items: List[Dict],
@@ -521,28 +905,66 @@ def apply(sess: Session, items: List[Dict],
     'deleted', 'skipped' or 'failed' (failed = any error while handling it, even if some files went)."""
     deleted, skipped, freed = 0, 0, 0
     n = len(items)
+    batched: Dict[str, Dict[str, int]] = {}  # deleted-message id -> its file sizes before the batch removed them
+    tried: Set[str] = set()                  # deleted-message ids a batch already looked at
     for i, it in enumerate(items):
         progress(i, n, it["label"])
         errs_before, item_freed, status = len(sess.errors), 0, "deleted"
         try:
-            if not still_eligible(sess, it):
+            if it["kind"] == "deleted" and it["id"] not in tried:
+                batched.update(_delete_posts_batch(sess, items[i:i + 100], tried))
+            if it["id"] not in batched and not still_eligible(sess, it):
                 status = "skipped"
                 logger.warning(f"Skipped {it['kind']} {it['id']}: changed since scan")
             elif it["kind"] == "orphan":
-                item_freed = delete_files(sess, it["paths"])
                 f = "fileinfo"
                 sess.cur.execute(f"DELETE FROM {sess.q(f)} fi WHERE fi.{sess.col(f, 'Id')} = %s "
                                  f"AND {_orphan_sql(sess)}", (it["id"],))
+                if sess.cur.rowcount == 1:  # still an orphan at the moment of deletion
+                    item_freed = delete_files(sess, it["paths"])
+                else:
+                    status = "skipped"
+            elif it["kind"] == "upload":
+                item_freed = delete_files(sess, it["paths"])
+                u = "uploadsessions"
+                sess.cur.execute(f"DELETE FROM {sess.q(u)} WHERE {sess.col(u, 'Id')} = %s", (it["id"],))
+            elif it["kind"] in ("untracked", "emoji"):
+                item_freed = delete_files(sess, it["paths"])
+            elif it["kind"] in TIDY:
+                table, where, params = _tidy_where(sess, it["kind"], it["at"])
+                it["rows_deleted"] = 0
+                while True:  # 10,000 rows per statement: short locks and bounded WAL on big tables
+                    sess.cur.execute(f"DELETE FROM {sess.q(table)} WHERE ctid IN "
+                                     f"(SELECT ctid FROM {sess.q(table)} WHERE {where} LIMIT 10000)", params)
+                    it["rows_deleted"] += max(sess.cur.rowcount, 0)
+                    if sess.cur.rowcount < 10000:
+                        break
+                item_freed = 0  # table space only comes back with VACUUM
             else:
                 # Mattermost's own delete runs first: if it fails, nothing of ours is gone yet.
-                before = existing_sizes(sess, it["paths"])
+                if it["kind"] in ("deleted", "dm") and it["id"] not in batched and _shares_files(sess, it):
+                    raise RuntimeError(SHARED_FILES)
+                before = batched.pop(it["id"]) if it["id"] in batched else existing_sizes(sess, it["paths"])
                 if it["kind"] == "channel":
                     sess.mmctl("channel", "delete", it["id"], "--confirm")
+                elif it["kind"] == "deleted":
+                    if not before.get("_batched") and _post_exists(sess, it["id"]):
+                        # the batch failed and this post is still there: retry it alone, so the error is its own
+                        sess.mmctl("post", "delete", it["id"], "--permanent", "--confirm")
+                    before.pop("_batched", None)
+                    # Mattermost's permanent delete keeps the message's earlier versions (edit history)
+                    p = "posts"
+                    sess.cur.execute(f"DELETE FROM {sess.q(p)} WHERE {sess.col(p, 'OriginalId')} = %s "
+                                     f"AND {sess.col(p, 'DeleteAt')} > 0", (it["id"],))
                 else:  # Mattermost can't delete DM channels; permanently delete every post (and its files) instead
                     posts = channel_post_ids(sess, it["id"])
-                    for i in range(0, len(posts), 100):
-                        sess.mmctl("post", "delete", *posts[i:i + 100], "--permanent", "--confirm")
+                    for b in range(0, len(posts), 100):
+                        sess.mmctl("post", "delete", *posts[b:b + 100], "--permanent", "--confirm")
                 delete_files(sess, it["paths"])  # whatever Mattermost left on disk
+                if it["kind"] == "channel" and it["paths"]:  # Mattermost's channel delete keeps the FileInfo rows
+                    f = "fileinfo"
+                    sess.cur.execute(f"DELETE FROM {sess.q(f)} fi WHERE fi.{sess.col(f, 'Path')} = ANY(%s) "
+                                     f"AND {_orphan_sql(sess)}", (it["paths"],))
                 after = existing_sizes(sess, list(before))
                 item_freed = sum(size for path, size in before.items() if path not in after)
         except Exception as e:
@@ -559,12 +981,60 @@ def apply(sess: Session, items: List[Dict],
     return {"deleted": deleted, "skipped": skipped, "bytes": freed}
 
 
-def vacuum(sess: Session) -> None:
-    """VACUUM FULL on FileInfo. Takes an exclusive lock; maintenance windows only."""
+KIND_TABLES = {"channel": ("posts", "fileinfo"), "dm": ("posts", "fileinfo"), "deleted": ("posts", "fileinfo"),
+               "orphan": ("fileinfo",), "upload": ("uploadsessions",), "history": ("posts",), "jobs": ("jobs",),
+               "links": ("linkmetadata",), "untracked": (), "emoji": ()}
+
+
+def _post_exists(sess: Session, post_id: str) -> bool:
+    p = "posts"
+    sess.cur.execute(f"SELECT 1 FROM {sess.q(p)} WHERE {sess.col(p, 'Id')} = %s", (post_id,))
+    return sess.cur.fetchone() is not None
+
+
+def _delete_posts_batch(sess: Session, window: List[Dict], tried: Set[str]) -> Dict[str, Dict[str, int]]:
+    """Permanently delete the run of deleted messages at the start of `window` with one mmctl call
+    (in plan order: replies before roots). Returns {id: sizes before} for the ones it handled; on
+    failure they're marked unbatched and apply() retries each alone."""
+    run = []
+    for it in window:
+        if it["kind"] != "deleted" or it["id"] in tried:
+            break
+        run.append(it)
+    tried.update(it["id"] for it in run)
+    eligible = [it for it in run if still_eligible(sess, it) and not _shares_files(sess, it)]  # shared: handled alone
+    if not eligible:
+        return {}
+    sizes = {it["id"]: existing_sizes(sess, it["paths"]) for it in eligible}
     try:
-        sess.cur.execute(f"VACUUM FULL ANALYZE {sess.q('fileinfo')}")
+        sess.mmctl("post", "delete", *[it["id"] for it in eligible], "--permanent", "--confirm")
+        ok = True
     except Exception as e:
-        sess.error(f"Vacuum failed: {e}")
+        logger.warning(f"Batch delete of {len(eligible)} messages failed, retrying one by one: {e}")
+        ok = False
+    return {i: {**sz, "_batched": ok} for i, sz in sizes.items()}
+
+
+def vacuum_tables(items: List[Dict]) -> List[str]:
+    """The tables the given (collected) items deleted rows from: the only ones worth a VACUUM FULL."""
+    return sorted({t for it in items for t in KIND_TABLES[it["kind"]]})
+
+
+def vacuum(sess: Session, tables: Sequence[str]) -> None:
+    """VACUUM FULL on these tables. Each takes an exclusive lock while it runs; maintenance windows only."""
+    # A VACUUM waiting for its lock makes every Mattermost query on that table wait behind it: give up after 10 s.
+    sess.cur.execute("SET lock_timeout = '10s'")
+    try:
+        for table in tables:
+            if table in sess.t:
+                try:
+                    sess.cur.execute(f"VACUUM FULL ANALYZE {sess.q(table)}")
+                except Exception as e:
+                    busy = "lock timeout" in str(e).lower()
+                    sess.error(f"Vacuum of {sess.t[table]} failed: "
+                               + ("the table was busy for 10 s, so it was skipped; try again when the server is quiet" if busy else str(e)))
+    finally:
+        sess.cur.execute("RESET lock_timeout")
 
 
 # --------------------------------------------------------------------------- CLI
@@ -573,12 +1043,15 @@ def print_summary_table(items: List[Dict], mode: str, reclaimed: int, total_stor
     print("\n" + "=" * 80)
     print(f" BINDAY REPORT ({mode})")
     print("=" * 80)
-    print(f"{'CHANNEL / USER DM / ORPHAN':<50} | {'FILES':<8} | {'SIZE':<10}")
+    print(f"{'ITEM':<50} | {'FILES':<8} | {'SIZE':<10}")
     print("-" * 80)
     for it in items:
         display = f"{it['group']}: {it['label']}" if it["kind"] == "channel" else f"{KIND_LABELS[it['kind']]}: {it['label']}"
         if len(display) > 48: display = display[:45] + "..."
-        print(f"{display:<50} | {len(it['paths']):<8} | {format_bytes(it['bytes']):<10}")
+        if "rows" in it:  # a database tidy: no files; its space comes back after VACUUM FULL
+            print(f"{display:<50} | {'-':<8} | ~{format_bytes(it['db_bytes'])} in DB")
+        else:
+            print(f"{display:<50} | {len(it['paths']):<8} | {format_bytes(it['bytes']):<10}")
     print("-" * 80)
     print(f"{'RECLAIMED SPACE' if mode == 'EXECUTE' else 'RECLAIMABLE SPACE':<50} | {'':<8} | {format_bytes(reclaimed):<10}")
     print("-" * 80)
@@ -603,16 +1076,24 @@ def main():
     ap.add_argument("--purge-archived-channels", action="store_true")
     ap.add_argument("--purge-deactivated-users", action="store_true")
     ap.add_argument("--purge-db-orphans", action="store_true")
-    ap.add_argument("--vacuum", action="store_true", help="Run VACUUM FULL on FileInfo table (requires --execute)")
+    ap.add_argument("--purge-deleted-posts", action="store_true", help="messages users deleted, and their files")
+    ap.add_argument("--purge-abandoned-uploads", action="store_true", help="unfinished uploads started over a week ago, idle since")
+    ap.add_argument("--purge-untracked-files", action="store_true", help="attachment files no database row points at")
+    ap.add_argument("--purge-deleted-emoji", action="store_true", help="images left by deleted custom emoji")
+    ap.add_argument("--tidy-edit-history", action="store_true", help="old versions of edited messages")
+    ap.add_argument("--tidy-jobs", action="store_true", help="finished job records older than 30 days")
+    ap.add_argument("--tidy-link-previews", action="store_true", help="link preview cache for messages older than 30 days")
+    ap.add_argument("--vacuum", action="store_true", help="VACUUM FULL the tables Binday deletes from (requires --execute)")
     ap.add_argument("--execute", action="store_true")
     ap.add_argument("--limit", type=int, default=0)
     args = ap.parse_args()
 
-    kinds = {k for k, on in (("channel", args.purge_archived_channels), ("dm", args.purge_deactivated_users),
-                             ("orphan", args.purge_db_orphans)) if on}
+    flags = {"channel": "purge_archived_channels", "dm": "purge_deactivated_users", "deleted": "purge_deleted_posts",
+             "orphan": "purge_db_orphans", "upload": "purge_abandoned_uploads", "untracked": "purge_untracked_files",
+             "emoji": "purge_deleted_emoji", "history": "tidy_edit_history", "jobs": "tidy_jobs", "links": "tidy_link_previews"}
+    kinds = {k for k, a in flags.items() if getattr(args, a)}
     if not kinds and not args.vacuum:
-        ap.error("nothing to do: pass at least one of --purge-archived-channels, --purge-deactivated-users, "
-                 "--purge-db-orphans, --vacuum")
+        ap.error("nothing to do: pass at least one --purge-*/--tidy-* flag or --vacuum")
 
     mode = "EXECUTE" if args.execute else "DRY-RUN"
     print(f"Starting... Mode: {mode}")
@@ -622,17 +1103,23 @@ def main():
                             mm_server=args.mm_server, mm_token=args.mm_token, mm_profile=args.mm_profile))
     try:
         if "channel" in kinds and channel_deletion_enabled(sess) is not True:
-            logger.error("ServiceSettings.EnableAPIChannelDeletion is false.")
+            logger.error("ServiceSettings.EnableAPIChannelDeletion is false or couldn't be read, so archived channels can't be deleted.")
+            if args.execute: sys.exit(1)
+        problem = post_deletion_problem(sess) if kinds & {"dm", "deleted"} else None
+        if problem:
+            logger.error(f"{POST_DELETION_TITLE}: {problem}.")
             if args.execute: sys.exit(1)
 
-        items = scan(sess, kinds, progress=lambda m: print(".", end="", flush=True), limit=args.limit)
+        items = collectable(scan(sess, kinds, progress=lambda m: print(".", end="", flush=True), limit=args.limit))
         reclaimed = sum(it["bytes"] for it in items)
         if args.execute:
             reclaimed = apply(sess, items)["bytes"]
         if args.vacuum:
             if args.execute:
-                print("\n[Maintenance] Running VACUUM FULL on FileInfo... (this locks the table)")
-                vacuum(sess)
+                # with bins: only the tables this run deleted from; --vacuum alone: every table Binday cleans
+                tables = vacuum_tables(items) if kinds else sorted({t for ts in KIND_TABLES.values() for t in ts})
+                print(f"\n[Maintenance] Running VACUUM FULL on {', '.join(tables) or 'nothing'}... (locks each table while it runs)")
+                vacuum(sess, tables)
             else:
                 print("\n[Maintenance] Dry-Run: Skipping VACUUM FULL.")
         print("\nCalculating total storage usage...")

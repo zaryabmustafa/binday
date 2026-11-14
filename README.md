@@ -47,8 +47,8 @@ Mattermost's data retention is an Enterprise feature, so on **Team Edition** thi
 
 ## How a cleanup works
 
-1. **Connect.** Enter your server's SSH login and database. Binday checks SSH, PostgreSQL, `mmctl` and the data directory, and nothing changes on the server.
-2. **Scan.** A dry run lists every archived channel, deactivated user's DM and orphaned file, and measures it on disk.
+1. **Connect.** Enter your server's SSH login and database. Binday checks SSH, PostgreSQL, `mmctl` and the data directory. Nothing is deleted or changed in Mattermost (with a URL and token, `mmctl` saves its login inside the container).
+2. **Scan.** A dry run looks in ten bins (archived channels, deactivated users' DMs, deleted messages, orphaned files, abandoned uploads, untracked files, deleted emoji images, and three database tidies) and measures everything on disk.
 3. **Review.** See the space to reclaim split by bin, largest first. Untick anything you want to keep.
 4. **Collect.** Type `DELETE` to confirm. Binday removes the items in order and shows what was collected, skipped and why.
 
@@ -66,7 +66,8 @@ Mattermost's data retention is an Enterprise feature, so on **Team Edition** thi
 
 - A Mattermost server running in **Docker** (any edition), with **PostgreSQL**.
 - **SSH access** to that server (password, key file or SSH agent).
-- To delete archived channels: `ServiceSettings.EnableAPIChannelDeletion = true`. DMs and orphaned files don't need it.
+- To delete archived channels: `ServiceSettings.EnableAPIChannelDeletion = true`, unless `mmctl` local mode works in the container.
+- To empty DMs and delete deleted messages: Mattermost **10.2 or later** (older `mmctl` can't delete posts permanently), and `ServiceSettings.EnableAPIPostDeletion = true` unless `mmctl` local mode works in the container. Binday uses local mode whenever it works. **Connect** tells you what's missing.
 - A recent database and data directory **backup**. Deletions are permanent.
 
 ### Install
@@ -98,29 +99,34 @@ Binday deletes data for good, so it's built to make mistakes hard:
 
 - **Dry run first.** Scanning only reads.
 - **You see exactly what goes.** The confirm dialog lists every bin with its size, and nothing happens until you type `DELETE`.
-- **Each item is checked again right before deletion.** If a channel was unarchived, a user reactivated or a message restored after the scan, that item is skipped.
-- **Mattermost deletes first.** Channels and DMs go through Mattermost's own `mmctl` commands. Binday removes leftover files only after that succeeds, so a refusal touches nothing.
+- **Each item is checked again right before deletion.** If a channel was unarchived, a user reactivated or a message restored after the scan, that item is skipped. A database tidy is skipped if more rows match than you approved.
+- **Mattermost deletes first.** Channels, DMs and deleted messages go through Mattermost's own `mmctl` commands. Binday removes leftover files only after that succeeds. A refused channel or message touches nothing; a DM is emptied 100 messages at a time, so a refusal part-way leaves the rest for the next run.
+- **Shared files stay.** A file that another live file record still uses (plugins can copy a record and keep its files) is never removed. Paths that would leave the data directory are refused.
 - **Nothing is hidden.** Every skipped or failed item is listed with its cause and the next step, and every run is logged.
-- **Uploads in drafts are safe.** Files not yet attached to a message are never treated as orphans.
+- **Uploads in drafts are safe.** Files not yet attached to a message are never treated as orphans, uploads untouched for less than a week and stray files younger than a day are left alone, and the untracked-files bin is off until you tick it. It refuses to run if most attachment files look untracked, which means the data directory doesn't match the database.
+- **Mattermost's own folders are never touched.** Avatars, team icons, branding, emoji in use, plugins, exports and imports stay. The untracked-files check only looks in the dated attachment folders.
 
 [All the rules →](docs/how-it-works.md#safety-rules)
 
 ## FAQ
 
 **How do I free up disk space on Mattermost Team Edition?**
-Team Edition has no data retention, so archived channels, deactivated users' messages and orphaned files are kept forever. Binday finds them, shows how much space each one uses, and deletes the ones you pick.
+Team Edition has no data retention, so archived channels, deactivated users' messages, deleted messages and their files, and orphaned files are kept forever. Binday finds them, shows how much space each one uses, and deletes the ones you pick.
 
 **Does archiving a channel in Mattermost free disk space?**
 No. An archived channel keeps all its messages and files. Binday permanently deletes archived channels with `mmctl channel delete`, then removes their files from disk.
 
 **How do I delete the messages of a deactivated Mattermost user?**
-Binday permanently deletes every message and file in DMs with deactivated users. Mattermost doesn't allow deleting DM channels themselves, so the empty conversation remains.
+Binday permanently deletes every message and file in DMs with deactivated users, including the other person's side of the conversation. Mattermost doesn't allow deleting DM channels themselves, so the empty conversation remains. Disabled bots don't count: their DMs are integration history and stay.
+
+**Does deleting a message in Mattermost delete its files?**
+No. Mattermost only hides a deleted message: the row and every attached file stay on disk, and nothing on Team Edition ever removes them. Binday's **Deleted messages** bin permanently deletes them with `mmctl post delete --permanent`, which also removes their files.
 
 **What are orphaned files in Mattermost?**
 File records and uploads whose message no longer exists, for example after posts were removed from the database. They take disk space but nobody can see them. Binday deletes the files and their `FileInfo` rows.
 
 **Why doesn't my disk space drop after deleting?**
-The data directory shrinks right away. The PostgreSQL database file only shrinks after `VACUUM FULL`, which Binday can run for you. It locks the `FileInfo` table while it runs, so use a maintenance window.
+The data directory shrinks right away. The PostgreSQL database file only shrinks after `VACUUM FULL`, which Binday can run for you. It only rewrites the tables that run deleted from, and locks each while it runs, so use a maintenance window.
 
 **Does Binday need Docker?**
 Yes, today it runs `mmctl` inside your Mattermost container (named `mattermost` by default; you can change it). Installs without Docker aren't supported yet.
@@ -135,7 +141,7 @@ No. Binday talks only to your server. It has no telemetry and no update check.
 
 - Mattermost must run in Docker, with PostgreSQL.
 - DM channels can't be deleted in Mattermost, so emptied conversations stay in the sidebar list.
-- Orphaned files are reviewed as one group, not one by one.
+- Every bin except archived channels and DMs is reviewed as one all-or-nothing row, not item by item.
 - Builds aren't code-signed or notarised yet.
 
 ## Contributing

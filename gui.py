@@ -10,6 +10,7 @@ All deletion logic lives in app.py; this file is UI only.
 """
 
 import json
+from typing import List
 import logging
 import os
 import sys
@@ -60,14 +61,64 @@ LINE, LINE2, SURF, SURF2, GROUND = C.OUTLINE, C.OUTLINE_VARIANT, C.SURFACE, C.SU
 RAIL, RAIL_INK, RAIL_DIM, RAIL_ACTIVE = C.INVERSE_SURFACE, C.ON_INVERSE_SURFACE, C.ON_SECONDARY_CONTAINER, C.SECONDARY_CONTAINER
 OK, KEPT, PRIMARY, RED = C.PRIMARY_FIXED, C.SECONDARY_FIXED, C.PRIMARY, C.ERROR
 
+_LEFT, _ON_LEFT = C.TERTIARY, C.ON_TERTIARY  # brown: things left behind
+_DB, _ON_DB = INK2, SURF                       # neutral: database rows, no files
 KIND = {  # icon, chip bg, chip fg, short label, bin name, removes, stays
     "channel": (ft.Icons.INVENTORY_2_ROUNDED, C.SECONDARY, C.ON_SECONDARY, "Channel", "Archived channels",
                 "The channel, its messages and every file posted in it", "Active channels, even empty ones"),
     "dm": (ft.Icons.PERSON_OFF_ROUNDED, C.TERTIARY_CONTAINER, C.ON_TERTIARY_CONTAINER, "DM", "Deactivated users' DMs",
-           "Every message and file in DMs with deactivated users (the empty conversation stays)", "The user accounts, and DMs between active users"),
-    "orphan": (ft.Icons.LINK_OFF_ROUNDED, C.TERTIARY, C.ON_TERTIARY, "Orphaned", "Orphaned files",
-               "Files whose message no longer exists, and their records", "Avatars, plugins, uploads in drafts"),
+           "Every message and file in DMs with deactivated users, both sides (the empty conversation stays)", "The user accounts, DMs between active users, and DMs with disabled bots"),
+    "deleted": (ft.Icons.SPEAKER_NOTES_OFF_ROUNDED, _LEFT, _ON_LEFT, "Deleted", "Deleted messages",
+                "Messages people deleted (Mattermost only hides them) and their files", "Every message still in a conversation"),
+    "orphan": (ft.Icons.LINK_OFF_ROUNDED, _LEFT, _ON_LEFT, "Orphaned", "Orphaned files",
+               "Files whose message is gone, or that an edit removed for good, and their records", "Avatars, plugins, uploads in drafts"),
+    "upload": (ft.Icons.CLOUD_OFF_ROUNDED, _LEFT, _ON_LEFT, "Upload", "Abandoned uploads",
+               "Uploads that never finished, started over a week ago and idle since", "Uploads in progress or recently resumed"),
+    "untracked": (ft.Icons.FIND_IN_PAGE_ROUNDED, _LEFT, _ON_LEFT, "Untracked", "Untracked files",
+                  "Files in attachment folders that no record points to, after a day", "Avatars, emoji, branding, plugins, exports"),
+    "emoji": (ft.Icons.EMOJI_EMOTIONS_ROUNDED, _LEFT, _ON_LEFT, "Emoji", "Deleted emoji images",
+              "Images Mattermost keeps after a custom emoji is deleted", "Every emoji still in use"),
+    "history": (ft.Icons.HISTORY_ROUNDED, _DB, _ON_DB, "History", "Edit history",
+                "Earlier versions of edited messages (no more Show edit history or restore)", "The current text of every message"),
+    "jobs": (ft.Icons.WORK_HISTORY_ROUNDED, _DB, _ON_DB, "Jobs", "Old job records",
+             "Records of finished background jobs, after 30 days", "Running and recent jobs"),
+    "links": (ft.Icons.LINK_ROUNDED, _DB, _ON_DB, "Previews", "Link preview cache",
+              "Cached previews on messages over 30 days old (fetched again when viewed)", "Previews on recent messages"),
 }
+SECTIONS = (("Conversations", ("channel", "dm", "deleted")), ("Leftover files", ("orphan", "upload", "untracked", "emoji")),
+            ("Database tidy · frees space after VACUUM FULL", ("history", "jobs", "links")))
+GROUPED = set(KIND) - {"channel", "dm"}  # one all-or-nothing row per bin in Review
+PLURAL = {"channel": "archived channels", "dm": "DMs of deactivated users", "deleted": "deleted messages",
+          "orphan": "orphaned files", "upload": "abandoned uploads", "untracked": "untracked files",
+          "emoji": "deleted emoji images", "history": "edit history rows", "jobs": "old job records", "links": "cached link previews"}
+CHIP_LABEL = {"channel": "Channels", "dm": "DMs", "deleted": "Deleted", "orphan": "Orphans", "upload": "Uploads",
+              "untracked": "Untracked", "emoji": "Emoji", "history": "History", "jobs": "Jobs", "links": "Previews"}
+FILTERS = (("Channels", {"channel"}), ("DMs", {"dm"}), ("Leftovers", {"deleted", "orphan", "upload", "untracked", "emoji"}),
+           ("Database", {"history", "jobs", "links"}))
+LOCATION = {"dm": "DM channel", "orphan": "FileInfo", "deleted": "Posts", "upload": "Uploads",
+            "untracked": "Attachments", "emoji": "emoji folder"}
+
+
+assert set(KIND) == set(PLURAL) == set(CHIP_LABEL) == set(core.KINDS) == set(core.KIND_TABLES), "a bin is missing a label"
+
+
+def count_of(items) -> int:
+    """How many things a group of items is: database rows for a tidy, else items."""
+    return sum(i.get("rows", 1) for i in items)
+
+
+def row_name(r) -> str:
+    k = r[0]["kind"]
+    return f"{count_of(r):,} {PLURAL[k]}" if k in GROUPED else r[0]["label"]
+
+
+def db_legend(items, done=None) -> list:
+    """One legend entry for all database-tidy rows: (swatch, pattern, label, count, size text)."""
+    tidy = [i for i in items if i["kind"] in core.TIDY]
+    if not tidy:
+        return []
+    rows = f"{count_of(tidy):,}" if done is None else (f"{done:,}" if done is not True else f"0 of {count_of(tidy):,}")
+    return [(_DB, None, "Database rows", rows, f"≈ {gb(sum(i['db_bytes'] for i in tidy))} after VACUUM")]
 STEPS = ("Connect", "Scan", "Review", "Collect")
 
 
@@ -154,7 +205,8 @@ def note(icon, text) -> ft.Control:
 
 def screen(head, body, left=(), right=(), scroll=False) -> ft.Control:
     """Every screen: title row, body blocks, then a footer bar (context on the left, actions on the right)."""
-    content = ft.Column(list(body), spacing=GAP, expand=True, scroll=ft.ScrollMode.AUTO if scroll else None)
+    content = ft.Column(list(body), spacing=GAP, expand=True, scroll=ft.ScrollMode.AUTO if scroll else None,
+                        horizontal_alignment=ft.CrossAxisAlignment.STRETCH if scroll else None)
     bar = ft.Container(ft.Row([ft.Row(list(left), spacing=8, expand=True), *right], spacing=10,
                               vertical_alignment=ft.CrossAxisAlignment.CENTER),
                        height=BAR_H, padding=ft.Padding.only(top=14), border=ft.Border.only(top=ft.BorderSide(1, LINE)))
@@ -253,7 +305,7 @@ def legend(entries) -> ft.Control:
 
 
 def size_cell(nbytes, max_bytes, kept=False) -> ft.Control:
-    w = max(3, round(140 * nbytes / max_bytes)) if max_bytes else 3
+    w = max(3, round(100 * nbytes / max_bytes)) if max_bytes else 3
     return ft.Row(alignment=ft.MainAxisAlignment.END, spacing=10, controls=[
         ft.Container(width=w, height=8, border_radius=3, bgcolor=KEPT if kept else INK),
         T(gb(nbytes), color=INK2 if kept else INK)])
@@ -270,7 +322,7 @@ def table(columns, rows, checkbox=False, on_select_all=None) -> ft.DataTable:
         columns=[ft.DataColumn(T(c.upper(), 12, ft.FontWeight.W_700, INK2), numeric=c in ("Files", "Size", "Freed"))
                  for c in columns],
         rows=rows, show_checkbox_column=checkbox, on_select_all=on_select_all, heading_row_color=SURF2,
-        heading_row_height=40, data_row_min_height=42, data_row_max_height=42, column_spacing=24,
+        heading_row_height=40, data_row_min_height=42, data_row_max_height=42, column_spacing=20,
         horizontal_margin=14, divider_thickness=1, horizontal_lines=ft.BorderSide(1, LINE2), expand=True)
 
 
@@ -278,10 +330,14 @@ def what_to_do(status: str, errors) -> str:
     text = " ".join(errors).lower()
     if status == "skipped":
         return "Nothing. It changed after the scan, so it was left as it was."
+    if "still uses its files" in text:
+        return "Nothing. Kept on purpose: deleting it would remove files another message still shows."
+    if "post delete" in text:
+        return "Set EnableAPIPostDeletion = true (or run mmctl in local mode), then scan again."
+    if "channel delete" in text:
+        return "Check that channel deletion is enabled, then scan again."
     if "permission" in text:
         return "Fix file ownership in the data directory, then scan again."
-    if "mmctl" in text or "channel" in text:
-        return "Check that channel deletion is enabled, then scan again."
     return "See the log for details, then scan again."
 
 
@@ -314,7 +370,8 @@ class PurgeApp:
         self.f_mm_server = field("Server URL", hint="http://localhost:8065", expand=True)
         self.f_mm_token = field("Access token", password=True, expand=True)
         # scan
-        self.kinds = {"channel", "dm", "orphan"}
+        self.kinds = set(KIND) - {"history", "untracked"}  # opt in: edit history changes what users see,
+        self.nested = []                                    # and untracked files are judged from the disk alone
         self.scanning, self.stop_scan = False, False
         self.scan_msg, self.scan_started = "", 0.0
         self.found = []
@@ -325,7 +382,7 @@ class PurgeApp:
         self.rows, self.selected = [], set()
         self.filter_kind, self.search = None, ""
         self.vacuum_after = False
-        self.f_search = field(None, hint="Filter by name", width=240)
+        self.f_search = field(None, hint="Filter by name", width=180)
         self.f_search.prefix_icon = ft.Icons.SEARCH_ROUNDED
         self.f_search.content_padding = ft.Padding.symmetric(horizontal=12, vertical=8)
         self.f_search.on_change = self._on_search
@@ -339,7 +396,13 @@ class PurgeApp:
         self.rail = ft.Container(width=104, bgcolor=RAIL, padding=ft.Padding.only(top=18, bottom=16))
         page.add(ft.Row([self.rail, self.body], spacing=0, expand=True,
                         vertical_alignment=ft.CrossAxisAlignment.STRETCH))
-        self._refresh_profiles()
+        if demo:  # made-up values only: never real profiles or keychain secrets (screenshots, privacy)
+            self._fill({"ssh": "root@chat.example.org", "data_dir": "/opt/mattermost/data", "container": "mattermost",
+                        "db_host": "127.0.0.1", "db_port": "5432", "db_name": "mattermost", "db_user": "mmuser",
+                        "db_password": "demo-password", "ssh_password": ""})
+            self.f_profile.value = "chat.example.org"
+        else:
+            self._refresh_profiles()
         self.paint()
 
     # ----------------------------------------------------------------- plumbing
@@ -357,6 +420,8 @@ class PurgeApp:
         if self.locked or step > self.max_step:
             return
         self.step = step
+        self.rail.content = self._rail()
+        self.rail.update()
         self.paint()
 
     def toast(self, msg):
@@ -601,6 +666,9 @@ class PurgeApp:
         return self.f_profile.value or (self.f_ssh.value.split("@")[-1].split(":")[0] if self.f_ssh.value else "default")
 
     def _save_profile(self, e=None):
+        if self.demo:
+            self.toast("Demo mode: profiles aren't saved.")
+            return
         name, form = self._profile_name(), self._form()
         profiles = load_profiles()
         profiles[name] = {k: v for k, v in form.items() if k not in SECRETS}
@@ -617,6 +685,8 @@ class PurgeApp:
         self.paint()
 
     def _on_connect(self, e=None):
+        if self.scanning or self.locked or self.connecting:
+            return
         form, missing = self._form(), False
         for fld, key in ((self.f_ssh, "ssh"), (self.f_data, "data_dir"), (self.f_db_name, "db_name"), (self.f_db_user, "db_user")):
             fld.error = None if form[key] else "Required"
@@ -660,10 +730,13 @@ class PurgeApp:
             checks.append((True, "Channel deletion is on", "EnableAPIChannelDeletion = true") if self.deletion_enabled else
                           (None, "Channel deletion is off", "Archived channels can be scanned but not deleted. Set "
                                                             "ServiceSettings.EnableAPIChannelDeletion = true and reconnect."))
+            self.post_problem = core.post_deletion_problem(self.sess)
+            if self.post_problem:
+                checks.append((None, core.POST_DELETION_TITLE, self.post_problem))
             self.storage_before = core.storage_usage(self.sess)
             checks.append((True, "Data directory found", f"{gb(self.storage_before)} in use"))
             self.server_name, self.server_state = self._profile_name(), "connected"
-            self.max_step, self.items, self.rows, self.found = 1, [], [], []
+            self.max_step, self.items, self.rows, self.found, self.nested, self.selected = 1, [], [], [], [], set()
         except Exception as ex:
             logging.exception("Connect failed")
             checks.append((False, "Couldn't connect", str(ex).splitlines()[0] if str(ex) else type(ex).__name__))
@@ -673,48 +746,55 @@ class PurgeApp:
 
     # ----------------------------------------------------------------- 2. Scan
     def _scan(self) -> ft.Control:
-        counts = {k: [0, 0, 0] for k in KIND}  # items, files, bytes
+        counts = {k: [0, 0, 0] for k in KIND}  # items (rows for a tidy), files, bytes (table space for a tidy)
         for it in self.found:
             c = counts[it["kind"]]
-            c[0] += 1; c[1] += len(it["paths"]); c[2] += it["bytes"]
+            c[0] += it.get("rows", 1); c[1] += len(it["paths"]); c[2] += it["bytes"] or it.get("db_bytes", 0)
         current = next((k for k in core.KINDS if k in self.kinds and k not in self.scan_done_kinds), None) if self.scanning else None
 
-        header = ft.Container(ft.Row([ft.Container(width=40), *[ft.Container(B(h.upper(), 12, INK2), width=w, expand=x, alignment=ft.Alignment(1, 0) if h in ("Items", "Files", "Size") else None)
-                              for h, w, x in (("Bin", 250, False), ("What it removes", None, True), ("What stays", None, True),
-                                              ("Items", 70, False), ("Files", 70, False), ("Size", 170, False))]], spacing=14),
+        header = ft.Container(ft.Row([ft.Container(width=40 + 36 + 14), *[ft.Container(B(h.upper(), 12, INK2), width=w, expand=x, alignment=ft.Alignment(1, 0) if h in ("Items", "Files", "Size") else None)
+                              for h, w, x in (("Bin · what it removes", None, True),
+                                              ("Items", 64, False), ("Files", 64, False), ("Size", 140, False))]], spacing=14),
                               bgcolor=SURF2, padding=ft.Padding.symmetric(horizontal=14, vertical=11),
                               border=ft.Border.only(bottom=ft.BorderSide(1, LINE)))
         rows = [header]
-        for kind, (icon, bg, fg, short, name, removes, stays) in KIND.items():
-            items, files, size = counts[kind]
-            on = kind in self.kinds
-            if not on:
-                tail = [T("Skipped", color=INK2)]
-                cells = ("–", "–")
-            elif kind in self.scan_done_kinds:
-                tail = [B(gb(size), 14, INK), ft.Icon(ft.Icons.CHECK_CIRCLE_ROUNDED, color=OK, size=18)]
-                cells = (items, files)
-            elif kind == current:
-                tail = [B(gb(size), 14, INK), spinner(16, OK)]
-                cells = (items, files)
-            else:
-                tail = [T("Waiting" if self.scanning else "Not scanned", color=INK2)]
-                cells = ("–", "–")
-            rows.append(ft.Container(ft.Row(spacing=14, controls=[
-                ft.Checkbox(value=on, disabled=self.scanning, on_change=lambda e, k=kind: self._toggle_kind(k)),
-                ft.Container(ft.Row([chip(kind, 40), B(name, 15, INK)], spacing=12), width=250),
-                ft.Container(T(removes, 13, color=INK2), expand=True), ft.Container(T(stays, 13, color=INK2), expand=True),
-                ft.Container(B(cells[0], 14, INK), width=70, alignment=ft.Alignment(1, 0)),
-                ft.Container(T(cells[1], color=INK), width=70, alignment=ft.Alignment(1, 0)),
-                ft.Container(ft.Row(tail, spacing=6, alignment=ft.MainAxisAlignment.END), width=170)]),
-                padding=ft.Padding.symmetric(horizontal=14, vertical=10),
-                border=ft.Border.only(bottom=ft.BorderSide(1, LINE2)) if kind != "orphan" else None))
-        bins = panel(ft.Column(rows, spacing=0), padding=0)
+        for title, kinds in SECTIONS:
+            rows.append(ft.Container(T(title.upper(), 11, ft.FontWeight.W_700, INK2), bgcolor=SURF2,
+                                     padding=ft.Padding.only(left=14, right=14, top=8, bottom=6),
+                                     border=ft.Border.only(bottom=ft.BorderSide(1, LINE2))))
+            for kind in kinds:
+                icon, bg, fg, short, name, removes, stays = KIND[kind]
+                items, files, size = counts[kind]
+                approx = "≈ " if kind in core.TIDY else ""
+                on = kind in self.kinds
+                if not on:
+                    tail = [T("Skipped", color=INK2)]
+                    cells = ("–", "–")
+                elif kind in self.scan_done_kinds:
+                    tail = [B(approx + gb(size), 14, INK), ft.Icon(ft.Icons.CHECK_CIRCLE_ROUNDED, color=OK, size=18)]
+                    cells = (items, files)
+                elif kind == current:
+                    tail = [B(approx + gb(size), 14, INK), spinner(16, OK)]
+                    cells = (items, files)
+                else:
+                    tail = [T("Waiting" if self.scanning else "Not scanned", color=INK2)]
+                    cells = ("–", "–")
+                rows.append(ft.Container(ft.Row(spacing=14, controls=[
+                    ft.Checkbox(value=on, disabled=self.scanning, on_change=lambda e, k=kind: self._toggle_kind(k)),
+                    chip(kind, 36),
+                    ft.Container(ft.Column([B(name, 15, INK), T(removes, 13, color=INK2),
+                                            T(f"Keeps {stays[0].lower() + stays[1:]}", 12, color=INK2)], spacing=1), expand=True),
+                    ft.Container(B(f"{cells[0]:,}" if isinstance(cells[0], int) else cells[0], 14, INK), width=64, alignment=ft.Alignment(1, 0)),
+                    ft.Container(T(f"{cells[1]:,}" if isinstance(cells[1], int) else cells[1], color=INK), width=64, alignment=ft.Alignment(1, 0)),
+                    ft.Container(ft.Row(tail, spacing=6, alignment=ft.MainAxisAlignment.END), width=140)]),
+                    padding=ft.Padding.symmetric(horizontal=14, vertical=8),
+                    border=ft.Border.only(bottom=ft.BorderSide(1, LINE2)) if kind != "links" else None))
+        bins = panel(ft.Column(rows, spacing=0, horizontal_alignment=ft.CrossAxisAlignment.STRETCH), padding=0)
 
         head = title_row("Choose what to collect",
                          "A scan only reads. It lists each item and measures it on disk, so you can review before anything is deleted.")
         blocks = [bins]
-        total = sum(c[2] for c in counts.values())
+        total = sum(c[2] for k, c in counts.items() if k not in core.TIDY)
         if self.scanning or self.found:
             elapsed = int(time.monotonic() - self.scan_started) if self.scanning else 0
             prog = panel(ft.Column(spacing=10, controls=[
@@ -722,19 +802,20 @@ class PurgeApp:
                         T(f"{elapsed // 60} min {elapsed % 60:02d} s" if self.scanning else "", color=INK2)]),
                 ft.ProgressBar(value=None if self.scanning else 1, color=PRIMARY, bgcolor=LINE2, bar_height=6, border_radius=3)]),
                 padding=ft.Padding.symmetric(horizontal=22, vertical=16))
-            recent = list(reversed(self.found[-60:]))
+            recent = list(reversed(self.found[-30:]))  # fewer controls per repaint keeps the scan screen responsive
             found_rows = [ft.Container(ft.Row(spacing=14, controls=[
                 ft.Container(bin_label(it["kind"], it["label"]), expand=2), ft.Container(T(it["group"], color=INK2), expand=1),
-                ft.Container(T(f"{len(it['paths'])} file{'s' if len(it['paths']) != 1 else ''}", color=INK), width=90, alignment=ft.Alignment(1, 0)),
-                ft.Container(B(gb(it["bytes"]), 14, INK), width=110, alignment=ft.Alignment(1, 0))]),
+                ft.Container(T(f"{it['rows']:,} rows" if "rows" in it else f"{len(it['paths'])} file{'s' if len(it['paths']) != 1 else ''}",
+                               color=INK), width=90, alignment=ft.Alignment(1, 0)),
+                ft.Container(B(f"≈ {gb(it['db_bytes'])}" if "rows" in it else gb(it["bytes"]), 14, INK), width=110, alignment=ft.Alignment(1, 0))]),
                 padding=ft.Padding.symmetric(horizontal=16, vertical=8), border=ft.Border.only(bottom=ft.BorderSide(1, LINE2)))
                 for it in recent]
-            found = panel(ft.Column(spacing=0, expand=True, controls=[
+            found = panel(ft.Column(spacing=0, height=300, controls=[
                 ft.Container(ft.Row([B("Found so far", 14, INK), T(f"{len(self.found)} items · {gb(total)} · newest first", color=INK2)], spacing=10),
                              padding=ft.Padding.symmetric(horizontal=16, vertical=12), border=ft.Border.only(bottom=ft.BorderSide(1, LINE))),
-                ft.ListView(found_rows, expand=True)]), padding=0, expand=True)
-            blocks += [prog, found]
-        return screen(head, blocks, left=[note(ft.Icons.VISIBILITY_OUTLINED, "Dry run · nothing is deleted at this step")],
+                ft.ListView(found_rows, expand=True)]), padding=0)
+            blocks = [prog, bins, found]
+        return screen(head, blocks, scroll=True, left=[note(ft.Icons.VISIBILITY_OUTLINED, "Dry run · nothing is deleted at this step")],
                       right=[btn("Stop scan", ft.Icons.STOP_CIRCLE_OUTLINED, self._on_stop, "outline") if self.scanning else
                              btn("Scan again" if self.found else "Run dry-run scan", ft.Icons.RADAR_ROUNDED, self._on_scan,
                                  "outline" if self.found else "fill", disabled=not self.kinds),
@@ -746,6 +827,9 @@ class PurgeApp:
         self.paint()
 
     def _on_scan(self, e=None):
+        if self.scanning or self.locked:
+            return
+        self.collected = False
         self.scanning, self.stop_scan, self.found, self.scan_done_kinds = True, False, [], set()
         self.scan_started, self.scan_msg, self.max_step = time.monotonic(), "", 1
         self.paint()
@@ -777,9 +861,13 @@ class PurgeApp:
 
         try:
             self.sess.errors.clear()
-            self.items = core.scan(self.sess, kinds, progress=progress, on_item=on_item)
+            found = core.scan(self.sess, kinds, progress=progress, on_item=on_item)
+            self.items = [it for it in found if not it.get("inside")]
+            self.nested = [it for it in found if it.get("inside")]  # go with their channel/DM unless it's kept
             self.scan_done_kinds = set(kinds)
             self.scan_msg = f"Dry run finished {time.strftime('%H:%M')}"
+            if self.sess.errors:
+                self.scan_msg += f" · {self.sess.errors[-1]}"
             self._build_rows()
             self.max_step = 2
         except Stopped:
@@ -794,20 +882,30 @@ class PurgeApp:
 
     # ----------------------------------------------------------------- 3. Review
     def _build_rows(self):
-        rows = [[it] for it in self.items if it["kind"] != "orphan"]
-        orphans = [it for it in self.items if it["kind"] == "orphan"]
-        if orphans:
-            rows.append(orphans)  # ponytail: orphans are one all-or-nothing row; thousands of rows are slow
+        rows = [[it] for it in self.items if it["kind"] not in GROUPED]
+        for k in KIND:  # ponytail: leftovers and database tidies are one all-or-nothing row each; thousands of rows are slow
+            group = [it for it in self.items if it["kind"] == k and k in GROUPED]
+            if group:
+                rows.append(group)
         rows.sort(key=lambda r: -sum(i["bytes"] for i in r))
         for n, r in enumerate(rows, 1):
             for it in r:
                 it["plan"] = n
+        deleted_plan = next((r[0]["plan"] for r in rows if r[0]["kind"] == "deleted"), None)
+        for it in self.nested:
+            it["plan"] = deleted_plan
         self.rows = rows
         self.selected = set(range(len(rows)))
         self.filter_kind, self.search, self.f_search.value = None, "", ""
 
     def _sel_items(self):
-        return [it for i in sorted(self.selected) for it in self.rows[i]]
+        sel = [it for i in sorted(self.selected) for it in self.rows[i]]
+        deleted_row = next((i for i, r in enumerate(self.rows) if r[0]["kind"] == "deleted"), None)
+        if deleted_row is not None and deleted_row in self.selected:
+            # deleted messages inside a kept channel or DM still go, as part of the Deleted messages bin
+            kept = {r[0]["id"] for i, r in enumerate(self.rows) if i not in self.selected and r[0]["kind"] in ("channel", "dm")}
+            sel += core.collectable(self.nested, kept)
+        return sel
 
     def _review(self) -> ft.Control:
         found_bytes = sum(it["bytes"] for it in self.items)
@@ -815,34 +913,36 @@ class PurgeApp:
         by_kind = {k: [it for it in sel if it["kind"] == k] for k in KIND}
         kept = [it for i, r in enumerate(self.rows) if i not in self.selected for it in r]
         sel_bytes, kept_bytes = sum(it["bytes"] for it in sel), sum(it["bytes"] for it in kept)
+        found_bytes = max(found_bytes, sel_bytes + kept_bytes)  # nested deleted messages can add to a kept channel
         segs = [(sum(i["bytes"] for i in by_kind[k]) / found_bytes if found_bytes else 0, KIND[k][1], None, None) for k in KIND]
         segs.append((kept_bytes / found_bytes if found_bytes else 0, None, HATCH, None))
         load = panel(ft.Column(spacing=12, controls=[
             ft.Row(vertical_alignment=ft.CrossAxisAlignment.END, controls=[
                 T(gb(sel_bytes), 32, ft.FontWeight.W_800, INK), T(f"selected to reclaim, of {gb(found_bytes)} found", color=INK2),
                 ft.Container(expand=True),
-                T(f"{len(sel):,} of {len(self.items):,} items · {sum(len(i['paths']) for i in sel):,} files", color=INK2)]),
+                T(f"{len(sel):,} items · {sum(len(i['paths']) for i in sel):,} files selected", color=INK2)]),
             load_bar(segs),
-            legend([(KIND[k][1], None, KIND[k][4] if k != "dm" else "Deactivated DMs", len(by_kind[k]),
-                     gb(sum(i["bytes"] for i in by_kind[k]))) for k in KIND if any(i["kind"] == k for i in self.items)]
+            legend([(KIND[k][1], None, CHIP_LABEL[k], f"{count_of(by_kind[k]):,}", gb(sum(i["bytes"] for i in by_kind[k])))
+                    for k in KIND if k not in core.TIDY and any(i["kind"] == k for i in self.items)] + db_legend(sel)
                    + ([(None, HATCH, "Kept", len(kept), gb(kept_bytes))] if kept else []))]),
             padding=ft.Padding.only(left=22, right=22, top=18, bottom=16))
 
-        counts = {k: sum(1 for it in self.items if it["kind"] == k) for k in KIND}
+        counts = {k: count_of([it for it in self.items if it["kind"] == k]) for k in KIND}
         filters = ft.Row(spacing=8, controls=[
-            filter_chip(f"All {len(self.items):,}", self.filter_kind is None, lambda e: self._set_filter(None)),
-            *[filter_chip(f"{({'channel': 'Channels', 'dm': 'DMs', 'orphan': 'Orphans'})[k]} {counts[k]:,}",
-                          self.filter_kind == k, lambda e, k=k: self._set_filter(k), KIND[k][1]) for k in KIND if counts[k]]])
+            filter_chip(f"All {len(self.rows):,}", self.filter_kind is None, lambda e: self._set_filter(None)),
+            *[filter_chip(f"{name} {sum(1 for r in self.rows if r[0]['kind'] in kinds):,}", self.filter_kind == name,
+                          lambda e, n=name: self._set_filter(n), KIND[next(iter(kinds))][1])
+              for name, kinds in FILTERS if any(it["kind"] in kinds for it in self.items)]])
         toolbar = ft.Row([filters, ft.Container(expand=True), self.f_search,
-                          btn("Select all", None, lambda e: self._select_all(True), "text", small=True),
-                          btn("Select none", None, lambda e: self._select_all(False), "text", small=True)])
+                          btn("Select none" if self._all_visible_selected() else "Select all", None,
+                              lambda e: self._select_all(not self._all_visible_selected()), "text", small=True)])
 
         max_bytes = max((sum(i["bytes"] for i in r) for r in self.rows), default=0)
         drows, shown = [], 0
         for idx, r in enumerate(self.rows):
             first = r[0]
-            name = f"{len(r):,} orphaned files" if first["kind"] == "orphan" else first["label"]
-            if self.filter_kind and first["kind"] != self.filter_kind:
+            name = row_name(r)
+            if self.filter_kind and first["kind"] not in dict(FILTERS)[self.filter_kind]:
                 continue
             if self.search and self.search.lower() not in name.lower():
                 continue
@@ -856,26 +956,28 @@ class PurgeApp:
                 ft.DataCell(T(f"#{first['plan']:03d}", 12, ft.FontWeight.W_600, INK3)),
                 ft.DataCell(name_cell),
                 ft.DataCell(bin_label(first["kind"])),
-                ft.DataCell(T("FileInfo table" if first["kind"] == "orphan" else first["group"], color=INK2 if not on else INK)),
-                ft.DataCell(ft.Row([T(f"{files:,}", color=INK if on else INK2)] + ([tag(f"{missing} missing")] if missing else []),
+                ft.DataCell(T(LOCATION.get(first["kind"], first["group"]), color=INK2 if not on else INK)),
+                ft.DataCell(ft.Row([T(f"{files:,}" if files else "–", color=INK if on else INK2)] + ([tag(f"{missing} missing")] if missing else []),
                                    spacing=8, alignment=ft.MainAxisAlignment.END)),
-                ft.DataCell(size_cell(nbytes, max_bytes, kept=not on))]))
+                ft.DataCell(ft.Row([T(f"≈ {gb(sum(i['db_bytes'] for i in r))} of table", color=INK2)], alignment=ft.MainAxisAlignment.END)
+                            if first["kind"] in core.TIDY else size_cell(nbytes, max_bytes, kept=not on))]))
         tbl = table(["Plan", "Name", "Bin", "Location", "Files", "Size"], drows, checkbox=True,
-                    on_select_all=lambda e: self._select_all(len(self.selected) != len(self.rows)))
-        orphan_note = " · the orphaned files are one row" if counts["orphan"] else ""
+                    on_select_all=lambda e: self._select_all(not self._all_visible_selected()))
+        orphan_note = " · each leftover and database bin is one row" if any(counts[k] for k in GROUPED) else ""
         table_panel = panel(ft.Column(spacing=0, expand=True, controls=[
             ft.Column([ft.Row([tbl])], scroll=ft.ScrollMode.AUTO, expand=True),
             footer(ft.Icons.SWAP_VERT_ROUNDED, f"{shown} of {len(self.rows)} rows{' · scroll for more' if shown > 8 else ''}{orphan_note}")]),
             padding=0, expand=True)
         if not self.rows:
-            table_panel = panel(ft.Container(T("Nothing to collect. Your server is tidy.", 15, color=INK2),
+            table_panel = panel(ft.Container(T("Already collected. Scan again to see what's left." if getattr(self, "collected", False)
+                                               else "Nothing to collect. Your server is tidy.", 15, color=INK2),
                                              alignment=ft.Alignment(0, 0)), expand=True)
 
         return screen(title_row("Review the load", f"{self.scan_msg}. Untick anything you want to keep. Largest first."),
                       [load, toolbar, table_panel],
                       left=[ft.Checkbox(value=self.vacuum_after, on_change=lambda e: setattr(self, "vacuum_after", e.control.value)),
                             T("Run VACUUM FULL afterwards", color=INK),
-                            ft.Container(T("· shrinks the database file, locks FileInfo while it runs", color=INK2, max_lines=1,
+                            ft.Container(T("· shrinks the database file, locks the cleaned tables while it runs", color=INK2, max_lines=1,
                                            overflow=ft.TextOverflow.ELLIPSIS), expand=True)],
                       right=[btn(f"Delete {len(sel):,} items · {gb(sel_bytes)}…", ft.Icons.DELETE_FOREVER_ROUNDED,
                                  self._on_delete, "danger", disabled=not sel)])
@@ -892,8 +994,19 @@ class PurgeApp:
         self.selected ^= {i}
         self.paint()
 
+    def _visible(self) -> List[int]:
+        """Indexes of the rows the filter and search currently show."""
+        return [i for i, r in enumerate(self.rows)
+                if (not self.filter_kind or r[0]["kind"] in dict(FILTERS)[self.filter_kind])
+                and (not self.search or self.search.lower() in row_name(r).lower())]
+
+    def _all_visible_selected(self) -> bool:
+        return set(self._visible()) <= self.selected
+
     def _select_all(self, value):
-        self.selected = set(range(len(self.rows))) if value else set()
+        """Tick or untick only the rows on screen: a row hidden by a filter keeps its choice."""
+        shown = set(self._visible())
+        self.selected = (self.selected | shown) if value else (self.selected - shown)
         self.paint()
 
     # ----------------------------------------------------------------- 3b. Confirm
@@ -902,15 +1015,21 @@ class PurgeApp:
         if not sel:
             return
         size_str = gb(sum(i["bytes"] for i in sel))
-        blocked = self.deletion_enabled is not True and any(i["kind"] == "channel" for i in sel)
+        no_channels = self.deletion_enabled is not True and any(i["kind"] == "channel" for i in sel)
+        no_posts = bool(getattr(self, "post_problem", None)) and any(i["kind"] in ("dm", "deleted") for i in sel)
+        blocked = no_channels or no_posts
         lines = []
-        for k in KIND:
-            its = [i for i in sel if i["kind"] == k]
+        tidy = [i for i in sel if i["kind"] in core.TIDY]
+        groups = [(k, [i for i in sel if i["kind"] == k], None) for k in KIND if k not in core.TIDY]
+        if tidy:
+            groups.append((tidy[0]["kind"], tidy, f"{count_of(tidy):,} database rows"))
+        for k, its, text in groups:
             if its:
-                label = {"channel": "archived channels", "dm": "DMs of deactivated users", "orphan": "orphaned files"}[k]
-                lines.append(ft.Container(ft.Row([chip(k), T(f"{len(its):,} {label}", color=INK), ft.Container(expand=True),
-                                                  B(gb(sum(i["bytes"] for i in its)), 14, INK)], spacing=12),
-                                          padding=ft.Padding.symmetric(horizontal=14, vertical=11),
+                size = f"≈ {gb(sum(i['db_bytes'] for i in its))} after VACUUM" if k in core.TIDY else gb(sum(i["bytes"] for i in its))
+                lines.append(ft.Container(ft.Row([chip(k), T(text or f"{count_of(its):,} {PLURAL[k]}", color=INK, expand=True, max_lines=1,
+                                                              overflow=ft.TextOverflow.ELLIPSIS),
+                                                  B(size, 14, INK)], spacing=12),
+                                          padding=ft.Padding.symmetric(horizontal=14, vertical=6),
                                           border=ft.Border.only(bottom=ft.BorderSide(1, LINE2))))
         lines.append(ft.Container(ft.Row([ft.Icon(ft.Icons.FUNCTIONS_ROUNDED, size=20, color=INK),
                                           T(f"Total · {sum(len(i['paths']) for i in sel):,} files", weight=ft.FontWeight.W_800, color=INK),
@@ -930,12 +1049,17 @@ class PurgeApp:
             self.page.update()
 
         def do_delete(ev):
+            if confirm.disabled or self.locked:  # a second click while the dialog closes must not start a second run
+                return
+            confirm.disabled = True
             self.page.pop_dialog()
             self._start_collect(sel)
 
         typed.on_change, confirm.on_click = on_type, do_delete
-        warn = [self._check_row(None, "Channel deletion is off on the server",
-                                "Untick archived channels, or set EnableAPIChannelDeletion = true and reconnect.")] if blocked else []
+        warn = ([self._check_row(None, "Channel deletion is off on the server",
+                                 "Untick archived channels, or set EnableAPIChannelDeletion = true and reconnect.")] if no_channels else []) + \
+               ([self._check_row(None, core.POST_DELETION_TITLE,
+                                 f"{getattr(self, 'post_problem', '')}. Untick DMs and deleted messages to go on.")] if no_posts else [])
         self.page.show_dialog(ft.AlertDialog(
             modal=True, bgcolor=SURF, barrier_color=ft.Colors.with_opacity(0.46, C.SCRIM),
             shape=ft.RoundedRectangleBorder(radius=22), content_padding=ft.Padding.only(left=28, right=28, top=26, bottom=8),
@@ -944,19 +1068,25 @@ class PurgeApp:
                     ft.Container(ft.Icon(ft.Icons.WARNING_ROUNDED, color=C.ON_ERROR_CONTAINER, size=28), width=48, height=48,
                                  border_radius=14, bgcolor=C.ERROR_CONTAINER, alignment=ft.Alignment(0, 0)),
                     ft.Column([T(f"Delete {len(sel):,} items for good?", 22, ft.FontWeight.W_800, INK),
-                               T(f"From {self.server_name} · {self.f_data.value}", color=INK2)], spacing=2, expand=True)]),
-                ft.Container(ft.Column(lines, spacing=0), border=ft.Border.all(1, LINE), border_radius=14,
-                             clip_behavior=ft.ClipBehavior.ANTI_ALIAS),
-                ft.Text(spans=[ft.TextSpan("Archived channels are deleted with mmctl, DM messages are permanently deleted, and orphaned file "
-                                           "records are removed, along with every file on disk. ", ft.TextStyle(color=INK2)),
+                               T(f"From {self.sess.s.ssh} · {self.sess.s.remote_data_dir}", color=INK2)], spacing=2, expand=True)]),
+                ft.Container(ft.Column([  # many bins scroll inside the list; the total row stays put
+                    ft.Column(lines[:-1], spacing=0, scroll=ft.ScrollMode.AUTO, height=min(39 * (len(lines) - 1), 312)), lines[-1]],
+                    spacing=0), border=ft.Border.all(1, LINE), border_radius=14, clip_behavior=ft.ClipBehavior.ANTI_ALIAS),
+                ft.Text(spans=[ft.TextSpan("Mattermost deletes the channels and messages through mmctl; Binday then removes the files and "
+                                           "database rows left behind. ", ft.TextStyle(color=INK2)),
                                ft.TextSpan("This can't be undone.", ft.TextStyle(color=INK, weight=ft.FontWeight.W_700)),
                                ft.TextSpan(" Back up the database and the data directory first.", ft.TextStyle(color=INK2))], size=14),
-                *warn, ft.Container(typed, margin=ft.Margin.only(top=6))])),
+                *warn,
+                *([T(f"Then VACUUM FULL on {', '.join(core.vacuum_tables(sel)) or 'nothing'}: each table is locked while it's rewritten.",
+                     13, color=INK2)] if self.vacuum_after else []),
+                ft.Container(typed, margin=ft.Margin.only(top=6))])),
             actions=[btn("Cancel", None, lambda ev: self.page.pop_dialog(), "text"), confirm],
             actions_padding=ft.Padding.only(left=28, right=28, bottom=22, top=4)))
 
     # ----------------------------------------------------------------- 4. Collecting / Results
     def _start_collect(self, sel):
+        if self.locked:
+            return
         plan_rows = sorted({it["plan"] for it in sel})
         self.route = [[it for it in sel if it["plan"] == p] for p in plan_rows]
         self.route_status = {p: {"status": "queued", "freed": 0, "deleted": 0, "failed": 0, "skipped": 0, "errors": []} for p in plan_rows}
@@ -990,8 +1120,9 @@ class PurgeApp:
             if run_vacuum:
                 self.current = "vacuum"
                 self.paint()
-                core.vacuum(self.sess)
-                self.vacuum_ran = True
+                n = len(self.sess.errors)
+                core.vacuum(self.sess, core.vacuum_tables(ordered))
+                self.vacuum_ran = len(self.sess.errors) == n
             self.storage_after = core.storage_usage(self.sess)
         except Exception as ex:
             logging.exception("Collect failed")
@@ -1000,6 +1131,8 @@ class PurgeApp:
         self.locked, self.current, self.server_state = False, None, "connected"
         self.result["seconds"] = int(time.monotonic() - self.collect_started)
         self.max_step = 3
+        # the reviewed plan is spent: Review shows nothing until a new scan
+        self.items, self.rows, self.nested, self.selected, self.collected = [], [], [], set(), True
         self.paint()
 
     def _bar_and_legend(self, planned):
@@ -1007,7 +1140,7 @@ class PurgeApp:
         total = sum(it["bytes"] for it in planned) or 1
         segs, entries = [], []
         for k, its in by_kind.items():
-            if not its:
+            if not its or k in core.TIDY:
                 continue
             kb = sum(i["bytes"] for i in its) or 1
             plans = sorted({i["plan"] for i in its})
@@ -1019,8 +1152,12 @@ class PurgeApp:
                                                    (max(0, failed_b) / kb, None, XHATCH),
                                                    (max(0, 1 - (freed + max(0, skipped_b) + max(0, failed_b)) / kb), None, None)]))
             done_n = sum(self.route_status[p]["deleted"] for p in plans)
-            entries.append((KIND[k][1], None, {"channel": "Archived channels", "dm": "Deactivated DMs", "orphan": "Orphaned files"}[k],
+            entries.append((KIND[k][1], None, CHIP_LABEL[k],
                             f"{done_n:,}" + ("" if self.result else f" of {len(its):,}"), gb(freed) if self.result else ""))
+        tidy_plans = sorted({i["plan"] for i in planned if i["kind"] in core.TIDY})
+        if tidy_plans:
+            done_rows = sum(i.get("rows_deleted", 0) for i in planned if i["kind"] in core.TIDY)
+            entries += db_legend(planned, done_rows if self.result else True)
         skipped = sum(s["skipped"] for s in self.route_status.values())
         failed = sum(s["failed"] for s in self.route_status.values())
         if skipped:
@@ -1076,13 +1213,13 @@ class PurgeApp:
 
         if running:
             cur_row = next((r for r in self.route if r[0]["plan"] == self.current), None)
-            cur_text = "Running VACUUM FULL on FileInfo…" if self.current == "vacuum" else \
-                (f"#{self.current:03d} · {cur_row[0]['label'] if cur_row[0]['kind'] != 'orphan' else f'{len(cur_row)} orphaned files'}" if cur_row else "Starting…")
+            cur_text = "Running VACUUM FULL…" if self.current == "vacuum" else \
+                (f"#{self.current:03d} · {row_name(cur_row)}" if cur_row else "Starting…")
             pct = done_items / len(planned) if planned else 1
             rows = []
             for r in self.route:
                 p = r[0]["plan"]
-                name = f"{len(r):,} orphaned files" if r[0]["kind"] == "orphan" else r[0]["label"]
+                name = row_name(r)
                 st = self.route_status[p]
                 rows.append(ft.DataRow(color=ft.Colors.with_opacity(0.09, PRIMARY) if p == self.current else None, cells=[
                     ft.DataCell(T(f"#{p:03d}", 12, ft.FontWeight.W_600, INK3)),
@@ -1098,7 +1235,7 @@ class PurgeApp:
                 ft.Column([ft.Row([table(["Plan", "Item", "Bin", "Status", "Freed"], rows)])], scroll=ft.ScrollMode.AUTO, expand=True),
                 footer(ft.Icons.SWAP_VERT_ROUNDED, f"{queued} rows queued · scroll for more")]), padding=0, expand=True)
             return screen(head, [load, route], left=[note(ft.Icons.LOCK_OUTLINE_ROUNDED,
-                          "Navigation is locked while collecting. Closing the window stops after the current item.")])
+                          "Navigation is locked while collecting. Keep this window open: closing it interrupts the item being deleted.")])
 
         # results
         problems = [(r, self.route_status[r[0]["plan"]]) for r in self.route
@@ -1107,7 +1244,7 @@ class PurgeApp:
         show = {"problems": problems, "deleted": deleted, "all": [(r, self.route_status[r[0]["plan"]]) for r in self.route]}[self.results_filter]
         rows = []
         for r, st in show:
-            name = f"{len(r):,} orphaned files" if r[0]["kind"] == "orphan" else r[0]["label"]
+            name = row_name(r)
             if st["status"] in ("failed", "skipped"):
                 what = (st["errors"][0].split(":")[-1].strip() if st["errors"] else "changed after the scan")
                 n_bad = st["failed"] or st["skipped"]
@@ -1115,12 +1252,14 @@ class PurgeApp:
                 happened = ft.Row([ft.Icon(ft.Icons.CANCEL_OUTLINED if st["status"] == "failed" else ft.Icons.SKIP_NEXT_ROUNDED, size=18, color=INK),
                                    ft.Text(spans=[ft.TextSpan(word, ft.TextStyle(weight=ft.FontWeight.W_700)),
                                                   ft.TextSpan(f": {what}")], color=INK, size=14, max_lines=1,
-                                           overflow=ft.TextOverflow.ELLIPSIS, width=380)], spacing=6)
+                                           overflow=ft.TextOverflow.ELLIPSIS, width=240)], spacing=6)
                 todo = what_to_do(st["status"], st["errors"])
             else:
                 happened, todo = self._status_cell(r[0]["plan"]), "–"
             rows.append(ft.DataRow(cells=[ft.DataCell(T(f"#{r[0]['plan']:03d}", 12, ft.FontWeight.W_600, INK3)),
-                                          ft.DataCell(bin_label(r[0]["kind"], name)), ft.DataCell(happened),
+                                          ft.DataCell(ft.Row([chip(r[0]["kind"]), ft.Container(  # long names ellipsize, never overlap
+                                              T(name, 13, color=INK, max_lines=1, overflow=ft.TextOverflow.ELLIPSIS), expand=True)],
+                                              spacing=8, width=210)), ft.DataCell(happened),
                                           ft.DataCell(T(todo, 13, color=INK2))]))
         filters = ft.Row(spacing=8, controls=[
             filter_chip(f"Problems {len(problems)}", self.results_filter == "problems", lambda e: self._set_results_filter("problems")),
@@ -1135,8 +1274,8 @@ class PurgeApp:
                 ft.Icon(ft.Icons.STORAGE_ROUNDED, size=28, color=PRIMARY),
                 ft.Column([B("The database file hasn't shrunk yet", 14, INK),
                            T("Deleted rows free space inside PostgreSQL, but the file on disk only shrinks after VACUUM FULL. "
-                             "It locks the FileInfo table while it runs, so do it in a maintenance window.", color=INK2)], spacing=2, expand=True),
-                btn("Run VACUUM FULL…", ft.Icons.COMPRESS_ROUNDED, self._on_vacuum, "outline")]),
+                             "It locks the tables Binday cleaned while it runs, so do it in a maintenance window.", color=INK2)], spacing=2, expand=True),
+                btn("Run VACUUM FULL…", ft.Icons.COMPRESS_ROUNDED, self._on_vacuum, "outline", disabled=self.locked)]),
                 padding=20))
         return screen(head, blocks, scroll=True, left=[note(ft.Icons.DESCRIPTION_OUTLINED, f"Full details for every item: {LOG_SHOWN}")],
                       right=[btn("Open log", ft.Icons.DESCRIPTION_OUTLINED, lambda e: webbrowser.open(LOG_FILE.as_uri()), "outline"),
@@ -1155,23 +1294,31 @@ class PurgeApp:
 
     def _on_vacuum(self, e=None):
         def run(ev):
+            if self.locked:
+                return
             self.page.pop_dialog()
-            self.toast("Running VACUUM FULL… the FileInfo table is locked until it finishes.")
+            self.locked, self.server_state = True, "deleting"  # no navigation, reconnect or second vacuum meanwhile
+            self.paint()
+            self.toast("Running VACUUM FULL… the cleaned tables are locked until it finishes.")
             self.page.run_thread(worker)
 
         def worker():
             n = len(self.sess.errors)
-            core.vacuum(self.sess)
-            self.vacuum_ran = len(self.sess.errors) == n
-            self.storage_after = core.storage_usage(self.sess)
+            try:
+                core.vacuum(self.sess, core.vacuum_tables([it for row in self.route for it in row]))
+                self.storage_after = core.storage_usage(self.sess)
+            finally:
+                self.vacuum_ran = len(self.sess.errors) == n
+                self.locked, self.server_state = False, "connected"
             self.paint()
             self.toast("VACUUM FULL finished." if self.vacuum_ran else "VACUUM FULL failed. See the log.")
 
         self.page.show_dialog(ft.AlertDialog(
             modal=True, bgcolor=SURF, shape=ft.RoundedRectangleBorder(radius=22),
             title=T("Run VACUUM FULL now?", 22, ft.FontWeight.W_800, INK),
-            content=T("It rewrites the FileInfo table and locks it until it finishes. Mattermost can't attach or show files "
-                      "during that time. Only do this in a maintenance window.", color=INK2, width=440),
+            content=T(f"It rewrites {', '.join(core.vacuum_tables([it for row in self.route for it in row])) or 'nothing'} "
+                      "(the tables this run deleted from) and locks each until it finishes. Mattermost can't show messages or "
+                      "files from a locked table, so only do this in a maintenance window.", color=INK2, width=440),
             actions=[btn("Cancel", None, lambda ev: self.page.pop_dialog(), "text"),
                      btn("Run VACUUM FULL", ft.Icons.COMPRESS_ROUNDED, run)]))
 

@@ -137,10 +137,101 @@ def main():
     seed["unattached"] = upload(admin, town, "draft-upload.png", png(200))
     seed["keep_files"] += [seed["unattached"]]
 
+    # ---- the newer bins (each mirrors Mattermost 12.1 behaviour checked in its source)
+    day = 86_400_000
+    now = int(psql("SELECT (extract(epoch from now()) * 1000)::bigint"))
+    # deleted message, edited once first: Mattermost keeps the row, its files and its edit history
+    d = post_files(admin, town, "to be deleted v1", some_files(2, "deleted"))
+    call("PUT", f"/posts/{d['post_id']}/patch", admin, body={"message": "to be deleted v2"})
+    call("DELETE", f"/posts/{d['post_id']}", admin)
+    seed["deleted_post"] = d
+    # an edit that drops an attachment: the dropped file is only marked deleted, and restoring the
+    # older version brings it back, so it must survive while that history exists
+    e = post_files(admin, town, "edited", some_files(2, "edited"))
+    call("PUT", f"/posts/{e['post_id']}/patch", admin, body={"file_ids": e["file_ids"][:1]})
+    seed["edited_post"] = e
+    seed["keep_files"] += e["file_ids"]
+    # a thread in a DM with a deactivated user: the reply's file must go too (replies are deleted first)
+    dm = seed["dms"]["purgeadmin-carol"]["id"]
+    root = call("POST", "/posts", admin, body={"channel_id": dm, "message": "thread root"})[1]
+    rf = upload(admin, dm, "dm-reply.png", png(150))
+    call("POST", "/posts", admin, body={"channel_id": dm, "message": "reply", "root_id": root["id"], "file_ids": [rf]})
+    seed["dms"]["purgeadmin-carol"]["file_ids"].append(rf)
+    # uploads: one abandoned 8 days ago (goes), one started now (stays)
+    uploads = {}
+    for name, age in (("abandoned", 8 * day), ("in-progress", 0)):
+        _, us = call("POST", "/uploads", admin, body={"channel_id": town, "filename": f"{name}.bin", "file_size": 12_000_000})
+        call("POST", f"/uploads/{us['id']}", admin, raw=b"x" * 5_300_000, ctype="application/octet-stream")
+        psql(f"UPDATE uploadsessions SET createat = {now - age} WHERE id = '{us['id']}'")
+        uploads[name] = {"id": us["id"], "path": psql(f"SELECT path FROM uploadsessions WHERE id = '{us['id']}'")}
+        if age:  # Binday also wants the partial file idle for a week (sessions have no update time)
+            sh("docker", "exec", "mm-purge-test-server-1", "sh", "-c",
+               f"touch -d '@{(now - age) // 1000}' '/opt/mattermost/data/{uploads[name]['path']}'")
+    seed["uploads"] = uploads
+    # untracked files in a dated folder: one untouched for days (goes), one fresh (stays)
+    sh("docker", "exec", "mm-purge-test-server-1", "sh", "-c",
+       "d=/opt/mattermost/data/20200101/teams/stray && mkdir -p $d && head -c 120000 /dev/urandom > $d/old.bin && "
+       "touch -d '2020-01-02 00:00' $d/old.bin && head -c 1000 /dev/urandom > $d/fresh.bin")
+    seed["untracked"] = {"old": "20200101/teams/stray/old.bin", "fresh": "20200101/teams/stray/fresh.bin"}
+    # a deleted custom emoji: Mattermost keeps its image as image_deleted
+    mmctl("config", "set", "ServiceSettings.EnableCustomEmoji", "true")
+    b = uuid.uuid4().hex
+    body = (f"--{b}\r\nContent-Disposition: form-data; name=\"emoji\"\r\n\r\n"
+            + json.dumps({"creator_id": me["id"], "name": "seedemoji"})
+            + f"\r\n--{b}\r\nContent-Disposition: form-data; name=\"image\"; filename=\"e.png\"\r\n"
+            + "Content-Type: image/png\r\n\r\n").encode() + png(64) + f"\r\n--{b}--\r\n".encode()
+    _, emoji = call("POST", "/emoji", admin, raw=body, ctype=f"multipart/form-data; boundary={b}")
+    call("DELETE", f"/emoji/{emoji['id']}", admin)
+    seed["emoji_deleted"] = f"emoji/{emoji['id']}/image_deleted"
+    # old finished job records and link previews (40 days) go; recent ones stay
+    psql(f"INSERT INTO jobs (id, type, priority, createat, startat, lastactivityat, status, progress, data) VALUES "
+         f"('{uuid.uuid4().hex[:26]}', 'seed_old', 0, {now - 40 * day}, 0, 0, 'success', 100, '{{}}'), "
+         f"('{uuid.uuid4().hex[:26]}', 'seed_running', 0, {now - 40 * day}, 0, 0, 'in_progress', 50, '{{}}')")
+    psql(f"INSERT INTO linkmetadata (hash, url, timestamp, type, data) VALUES "
+         f"(101, 'https://example.com/old', {now - 40 * day}, 'opengraph', '{{}}'), "
+         f"(102, 'https://example.com/new', {now}, 'opengraph', '{{}}')")
+
+    # files shared by two FileInfo rows (Mattermost's CopyFileInfos, used by plugins, keeps the paths):
+    # a live copy of an archived-channel file and of an orphan must keep those files on disk
+    holder = call("POST", "/posts", admin, body={"channel_id": seed["channels"]["keep-me"]["id"], "message": "copies"})[1]["id"]
+    seed["shared_copies"] = []
+    for src in (seed["channels"]["old-project"]["file_ids"][0], seed["orphans"][0]):
+        new_id = uuid.uuid4().hex[:26]
+        psql(f"INSERT INTO fileinfo SELECT (jsonb_populate_record(NULL::fileinfo, to_jsonb(f) || "
+             f"jsonb_build_object('id', '{new_id}', 'postid', '{holder}'))).* FROM fileinfo f WHERE id = '{src}'")
+        seed["shared_copies"].append(new_id)
+        seed["keep_files"].append(new_id)
+    # a finished upload whose session row lingered (Mattermost only logs if deleting it fails)
+    live = seed["channels"]["keep-me"]["file_ids"][0]
+    seed["lingering_session"] = uuid.uuid4().hex[:26]
+    psql(f"INSERT INTO uploadsessions (id, type, createat, userid, channelid, filename, path, filesize, fileoffset) "
+         f"SELECT '{seed['lingering_session']}', 'attachment', {now - 10 * day}, creatorid, '{seed['channels']['keep-me']['id']}', "
+         f"name, path, size, size FROM fileinfo WHERE id = '{live}'")
+
+    # a disabled bot (as when its owner is deactivated): its DM with an active user is integration history, kept
+    mmctl("config", "set", "ServiceSettings.EnableBotAccountCreation", "true")
+    _, bot = call("POST", "/bots", admin, body={"username": "seedbot", "display_name": "Seed bot"})
+    dave = login("dave", users["dave"])
+    _, botdm = call("POST", "/channels/direct", dave, body=[ids["dave"], bot["user_id"]])
+    p = post_files(dave, botdm["id"], "to the bot", some_files(1, "botdm"))
+    call("POST", f"/bots/{bot['user_id']}/disable", admin)
+    seed["bot_dm"] = {"id": botdm["id"], "file_ids": p["file_ids"]}
+    seed["keep_files"] += p["file_ids"]
+    # a deleted message whose file a live copy still uses: Mattermost's own delete would remove the file, so it stays
+    sd = post_files(admin, town, "shared then deleted", some_files(1, "shareddel"))
+    copy = uuid.uuid4().hex[:26]
+    psql(f"INSERT INTO fileinfo SELECT (jsonb_populate_record(NULL::fileinfo, to_jsonb(f) || "
+         f"jsonb_build_object('id', '{copy}', 'postid', '{holder}'))).* FROM fileinfo f WHERE id = '{sd['file_ids'][0]}'")
+    call("DELETE", f"/posts/{sd['post_id']}", admin)
+    seed["shared_deleted"] = {"post_id": sd["post_id"], "copy": copy}
+    seed["keep_files"].append(copy)
+
     out.write_text(json.dumps(seed, indent=2))
     print(f"Seeded. Users/passwords and ids written to {out}.")
     print("Expect the tool to find: 3 archived channels (2 with files), 3 DMs with deactivated users, "
-          f"{len(seed['orphans'])} orphaned files. It must keep: keep-me, the DM with dave, and draft-upload.png.")
+          f"{len(seed['orphans'])} orphaned files, 1 deleted message, 1 abandoned upload, 1 untracked file, "
+          "1 deleted emoji image, old jobs and link previews. It must keep: keep-me, the DM with dave, draft-upload.png, "
+          "both files of the edited post, the in-progress upload and the fresh untracked file.")
 
 
 if __name__ == "__main__":

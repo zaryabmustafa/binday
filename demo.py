@@ -41,9 +41,24 @@ def _items():
     for i, (p, mb) in enumerate(zip(people, sizes)):
         out.append({"kind": "dm", "id": f"dm{i}", "user_id": f"u{i}", "label": f"DM with {p}", "group": "Direct messages",
                     "paths": [f"d{i}/{k}" for k in range(max(1, mb // 2))], "bytes": mb * MB, "missing": 0})
+    for i in range(312):
+        out.append({"kind": "deleted", "id": f"p{i}", "label": "in Town Square", "group": "Deleted messages",
+                    "paths": [f"p{i}/a"] if i % 3 else [], "bytes": (rnd.randint(1, 9) * MB) if i % 3 else 0, "missing": 0})
     for i in range(954):
         out.append({"kind": "orphan", "id": f"fi{i}", "label": f"{rnd.getrandbits(32):08x}.png", "group": "Orphaned files",
                     "paths": [f"o{i}/a", f"o{i}/t", f"o{i}/p"], "bytes": 2_100_000, "missing": 0})
+    for i in range(7):
+        out.append({"kind": "upload", "id": f"up{i}", "label": f"recording-{i}.mp4", "group": "Abandoned uploads",
+                    "paths": [f"u{i}"], "bytes": rnd.randint(40, 300) * MB, "missing": 0})
+    for i in range(23):
+        out.append({"kind": "untracked", "id": f"x{i}", "label": f"{rnd.getrandbits(32):08x}.bin", "group": "Untracked files",
+                    "paths": [f"x{i}"], "bytes": rnd.randint(1, 30) * MB, "missing": 0})
+    for i, name in enumerate(("partyparrot", "old-logo", "shipit")):
+        out.append({"kind": "emoji", "id": f"e{i}", "label": f":{name}:", "group": "Deleted emoji",
+                    "paths": [f"emoji/e{i}/image_deleted"], "bytes": 180_000, "missing": 0})
+    for kind, rows, db in (("history", 18_420, 61 * MB), ("jobs", 9_310, 14 * MB), ("links", 52_800, 220 * MB)):
+        out.append({"kind": kind, "id": kind, "label": f"{rows:,} rows", "group": "Database", "paths": [],
+                    "bytes": 0, "db_bytes": db, "missing": 0, "rows": rows, "at": 0})
     return out
 
 
@@ -53,7 +68,7 @@ def scan(sess, kinds, progress=lambda m: None, limit=0, on_item=None):
         if it["kind"] not in kinds:
             continue
         progress(f"Measuring {it['label']}")
-        time.sleep((0.004 if it["kind"] == "orphan" else 0.12) * SPEED)
+        time.sleep((0.004 if it["kind"] in ("orphan", "deleted") else 0.12) * SPEED)
         items.append(it)
         if on_item:
             on_item(it)
@@ -64,7 +79,7 @@ def apply(sess, items, progress=lambda i, n, l: None, on_item=None):
     deleted = skipped = freed = 0
     for i, it in enumerate(items):
         progress(i, len(items), it["label"])
-        time.sleep((0.002 if it["kind"] == "orphan" else 0.15) * SPEED)
+        time.sleep((0.002 if it["kind"] in ("orphan", "deleted") else 0.15) * SPEED)
         errs = []
         if it["label"] == "DM with t.nguyen":
             status, got = "skipped", 0
@@ -73,6 +88,8 @@ def apply(sess, items, progress=lambda i, n, l: None, on_item=None):
             errs, status, got = sess.errors[-1:], "failed", 0
         else:
             status, got = "deleted", it["bytes"]
+            if "rows" in it:
+                it["rows_deleted"] = it["rows"]
         freed += got
         deleted += status == "deleted"
         skipped += status == "skipped"
@@ -114,4 +131,5 @@ def install(fast: bool = False):
     app.storage_usage = storage_usage
     app.scan = scan
     app.apply = apply_and_shrink
-    app.vacuum = lambda sess: time.sleep(1.5 * SPEED)
+    app.vacuum = lambda sess, tables=(): time.sleep(1.5 * SPEED)
+    app.post_deletion_problem = lambda sess: None

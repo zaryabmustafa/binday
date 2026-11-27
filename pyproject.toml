@@ -9,11 +9,11 @@ dependencies = [
   "paramiko",
   "psycopg2-binary",
   "keyring",
-  "flet==1.1.2",
+  "flet==1.1.3",
 ]
 
 [project.optional-dependencies]
-dev = ["flet[all]==1.1.2"]   # flet-cli (flet build) plus the desktop and web runtimes for `python gui.py`
+dev = ["flet[all]==1.1.3"]   # flet-cli (flet build) plus the desktop and web runtimes for `python gui.py`
 
 # `flet build windows|macos|linux` reads this section. See README "Building the desktop app".
 [tool.flet]
